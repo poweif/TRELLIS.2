@@ -7,7 +7,10 @@ from PIL import Image
 import trimesh
 import trimesh.visual
 from flex_gemm.ops.grid_sample import grid_sample_3d
-import nvdiffrast.torch as dr
+try:
+    import nvdiffrast.torch as dr
+except ImportError:
+    dr = None
 import cumesh
 
 

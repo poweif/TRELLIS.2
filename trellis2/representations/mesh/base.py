@@ -33,28 +33,11 @@ class Mesh:
         return self.to('cpu')
     
     def fill_holes(self, max_hole_perimeter=3e-2):
-        vertices = self.vertices.cuda()
-        faces = self.faces.cuda()
-        
-        mesh = cumesh.CuMesh()
-        mesh.init(vertices, faces)
-        mesh.get_edges()
-        mesh.get_boundary_info()
-        if mesh.num_boundaries == 0:
-            return
-        mesh.get_vertex_edge_adjacency()
-        mesh.get_vertex_boundary_adjacency()
-        mesh.get_manifold_boundary_adjacency()
-        mesh.read_manifold_boundary_adjacency()
-        mesh.get_boundary_connected_components()
-        mesh.get_boundary_loops()
-        if mesh.num_boundary_loops == 0:
-            return
-        mesh.fill_holes(max_hole_perimeter=max_hole_perimeter)
-        new_vertices, new_faces = mesh.read()
-        
-        self.vertices = new_vertices.to(self.device)
-        self.faces = new_faces.to(self.device)
+        import trimesh
+        tm = trimesh.Trimesh(vertices=self.vertices.cpu().numpy(), faces=self.faces.cpu().numpy(), process=False)
+        trimesh.repair.fill_holes(tm)
+        self.vertices = torch.tensor(tm.vertices, dtype=torch.float32, device=self.device)
+        self.faces = torch.tensor(tm.faces, dtype=torch.int32, device=self.device)
         
     def remove_faces(self, face_mask: torch.Tensor):
         vertices = self.vertices.cuda()

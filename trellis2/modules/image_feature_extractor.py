@@ -61,6 +61,8 @@ class DinoV3FeatureExtractor:
     Feature extractor for DINOv3 models.
     """
     def __init__(self, model_name: str, image_size=512):
+        if model_name == "facebook/dinov3-vitl16-pretrain-lvd1689m":
+            model_name = "kryveil/dinov3-vitl16-pretrain-lvd1689m"
         self.model_name = model_name
         self.model = DINOv3ViTModel.from_pretrained(model_name)
         self.model.eval()
@@ -83,7 +85,7 @@ class DinoV3FeatureExtractor:
         hidden_states = self.model.embeddings(image, bool_masked_pos=None)
         position_embeddings = self.model.rope_embeddings(image)
 
-        for i, layer_module in enumerate(self.model.layer):
+        for i, layer_module in enumerate(self.model.model.layer):
             hidden_states = layer_module(
                 hidden_states,
                 position_embeddings=position_embeddings,

@@ -184,6 +184,10 @@ def sparse_windowed_scaled_dot_product_cross_attention(
             cu_seqlens_q=q_attn_func_args['cu_seqlens'], cu_seqlens_k=kv_attn_func_args['cu_seqlens'],
             max_seqlen_q=q_attn_func_args['max_seqlen'], max_seqlen_k=kv_attn_func_args['max_seqlen'],
         )  # [M, H, C]
+    elif config.ATTN == 'sdpa':
+        from .sdpa_varlen import sdpa_varlen
+        k, v = kv_feats.unbind(dim=1)
+        out = sdpa_varlen(q_feats, k, v, q_seq_lens, kv_seq_lens)
 
     out = out[q_bwd_indices]      # [T, H, C]
 

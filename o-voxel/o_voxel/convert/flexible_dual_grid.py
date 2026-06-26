@@ -221,21 +221,29 @@ def flexible_dual_grid_to_mesh(
     N = dual_vertices.shape[0]
     mesh_vertices = (coords.float() + dual_vertices) / (2 * N) - 0.5
 
-    # Store active voxels into hashmap
-    hashmap = _init_hashmap(grid_size, 2 * N, device=coords.device)
-    _C.hashmap_insert_3d_idx_as_val_cuda(*hashmap, torch.cat([torch.zeros_like(coords[:, :1]), coords], dim=-1), *grid_size.tolist())
+    # USE DENSE TENSOR INSTEAD OF CUDA HASHMAP
+    S_x, S_y, S_z = int(grid_size[0].item()), int(grid_size[1].item()), int(grid_size[2].item())
+    dense_map = torch.full((S_x * S_y * S_z,), -1, dtype=torch.int32, device=coords.device)
+    c_x, c_y, c_z = coords[:, 0].long(), coords[:, 1].long(), coords[:, 2].long()
+    
+    valid_mask = (c_x >= 0) & (c_x < S_x) & (c_y >= 0) & (c_y < S_y) & (c_z >= 0) & (c_z < S_z)
+    flat_indices = c_x[valid_mask] * (S_y * S_z) + c_y[valid_mask] * S_z + c_z[valid_mask]
+    dense_map[flat_indices] = torch.arange(N, dtype=torch.int32, device=coords.device)[valid_mask]
 
     # Find connected voxels
-    edge_neighbor_voxel = coords.reshape(N, 1, 1, 3) + flexible_dual_grid_to_mesh.edge_neighbor_voxel_offset      # (N, 3, 4, 3)
-    connected_voxel = edge_neighbor_voxel[intersected_flag]                           # (M, 4, 3)
+    edge_neighbor_voxel = coords.reshape(N, 1, 1, 3) + flexible_dual_grid_to_mesh.edge_neighbor_voxel_offset
+    connected_voxel = edge_neighbor_voxel[intersected_flag]
     M = connected_voxel.shape[0]
-    connected_voxel_hash_key = torch.cat([
-        torch.zeros((M * 4, 1), dtype=torch.int, device=coords.device),
-        connected_voxel.reshape(-1, 3)
-    ], dim=1)
-    connected_voxel_indices = _C.hashmap_lookup_3d_cuda(*hashmap, connected_voxel_hash_key, *grid_size.tolist()).reshape(M, 4).int()
-    connected_voxel_valid = (connected_voxel_indices != 0xffffffff).all(dim=1)
-    quad_indices = connected_voxel_indices[connected_voxel_valid].int()                             # (L, 4)
+    
+    cv_x, cv_y, cv_z = connected_voxel[..., 0].long(), connected_voxel[..., 1].long(), connected_voxel[..., 2].long()
+    cv_valid_mask = (cv_x >= 0) & (cv_x < S_x) & (cv_y >= 0) & (cv_y < S_y) & (cv_z >= 0) & (cv_z < S_z)
+    cv_flat = cv_x * (S_y * S_z) + cv_y * S_z + cv_z
+    
+    connected_voxel_indices = torch.full((M, 4), -1, dtype=torch.int32, device=coords.device)
+    connected_voxel_indices[cv_valid_mask] = dense_map[cv_flat[cv_valid_mask]]
+
+    connected_voxel_valid = (connected_voxel_indices != -1).all(dim=1)
+    quad_indices = connected_voxel_indices[connected_voxel_valid].long()
     L = quad_indices.shape[0]
 
     # Construct triangles

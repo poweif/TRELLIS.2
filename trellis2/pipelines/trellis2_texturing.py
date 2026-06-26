@@ -10,7 +10,10 @@ from ..modules.sparse import SparseTensor
 from ..modules import image_feature_extractor
 import o_voxel
 import cumesh
-import nvdiffrast.torch as dr
+try:
+    import nvdiffrast.torch as dr
+except ImportError:
+    dr = None
 import cv2
 import flex_gemm
 

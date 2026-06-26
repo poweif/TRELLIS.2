@@ -7,6 +7,8 @@ from PIL import Image
 
 class BiRefNet:
     def __init__(self, model_name: str = "ZhengPeng7/BiRefNet"):
+        if model_name == "briaai/RMBG-2.0":
+            model_name = "ZhengPeng7/BiRefNet"
         self.model = AutoModelForImageSegmentation.from_pretrained(
             model_name, trust_remote_code=True
         )
