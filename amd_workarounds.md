@@ -334,11 +334,13 @@ pip install pillow-simd
 ```
 
 Notes:
-- **flash-attn is not needed.** `run_sample.py` sets `ATTN_BACKEND=sdpa` which uses
-  PyTorch's built-in `F.scaled_dot_product_attention`. The attention module
-  (`trellis2/modules/sparse/attention/sdpa_varlen.py`) implements variable-length
-  sequences as a Python loop over per-sample SDPA calls, avoiding the padding-induced
-  OOMs that occur with fixed-shape attention on gfx1151.
+- **flash-attn is not needed.** The `flash-attn` package has no ROCm build for gfx1151
+  — its HIP support targets CDNA GPUs (MI series, gfx942) only. `run_sample.py` sets
+  `ATTN_BACKEND=sdpa` instead, which routes all attention calls to PyTorch's built-in
+  `F.scaled_dot_product_attention`. This works because we built PyTorch itself for
+  gfx1151. `trellis2/modules/sparse/attention/sdpa_varlen.py` adapts the variable-length
+  batch interface (splitting the packed token tensor into per-sequence chunks and calling
+  SDPA on each) — the same role that `flash_attn_varlen_*` played in the default backend.
 - **nvdiffrast is not needed.** The UV rasterisation required for GLB texture baking
   has been replaced with a pure-PyTorch implementation at
   `trellis2/utils/uv_rasterize.py` that runs on any backend.
@@ -457,5 +459,5 @@ Expected runtime on Radeon 8060S (single-GPU inference, `1024_cascade` pipeline)
 | Segfault in decode / mesh extraction | cumesh/o-voxel/FlexGEMM compiled for gfx1100, ROCm cannot dispatch on gfx1151 | Rebuild all GPU extensions with `GPU_ARCHS=gfx1151` |
 | `miopenStatusUnknownError` during BiRefNet GPU inference | MIOpen probes Winograd convolution when benchmarking new shapes; the Winograd kernel assembly (`Conv_Winograd_v30_3_1_fp32_f3x2_stride1.s`) is missing for gfx1151, causing the entire forward pass to raise an exception | Set `MIOPEN_DEBUG_CONV_WINOGRAD=0` (done in `run_sample.py`) |
 | nvdiffrast unavailable on ROCm | nvdiffrast has no ROCm backend | Replaced `dr.rasterize` / `dr.interpolate` calls in `postprocess.py` and `trellis2_texturing.py` with `trellis2/utils/uv_rasterize.py` (pure PyTorch) |
-| OOM in sparse attention | Padding variable-length sequences to a fixed maximum length before computing attention caused large intermediate tensors | Replaced with `sdpa_varlen` (per-sample `F.scaled_dot_product_attention` in a Python loop); set `ATTN_BACKEND=sdpa` in `run_sample.py` |
+| `flash_attn` unavailable on gfx1151 | `flash-attn`'s HIP backend only supports CDNA GPUs (gfx942 / MI series); it has no gfx1151 build | Set `ATTN_BACKEND=sdpa`; `sdpa_varlen` adapts the varlen interface using per-sequence `F.scaled_dot_product_attention` calls backed by PyTorch's own gfx1151 kernels |
 | Segfault with `HSA_OVERRIDE_GFX_VERSION=11.0.0` | After rebuilding extensions for gfx1151, the override causes ROCm to look for gfx1100 kernels that no longer exist | Remove `HSA_OVERRIDE_GFX_VERSION` entirely (not set in `run_sample.py`) |
