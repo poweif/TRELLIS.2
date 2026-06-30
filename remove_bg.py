@@ -9,11 +9,17 @@ Usage:
 Defaults: test.png → test_nobg.png
 """
 
+import os
 import sys
 import numpy as np
 from PIL import Image
 import torch
 from torchvision import transforms
+
+# MIOpen on gfx1151 fails to load the Winograd kernel assembly when benchmarking
+# new convolution shapes, raising miopenStatusUnknownError. Disable Winograd so
+# MIOpen only considers GEMM/Direct algorithms that work on this GPU.
+os.environ.setdefault("MIOPEN_DEBUG_CONV_WINOGRAD", "0")
 
 INPUT = "test.png"
 OUTPUT = "test_nobg.png"

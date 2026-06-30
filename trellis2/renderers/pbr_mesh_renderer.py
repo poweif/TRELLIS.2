@@ -196,7 +196,10 @@ class PbrMeshRenderer:
         """
     def __init__(self, rendering_options={}, device='cuda'):
         if 'dr' not in globals():
-            import nvdiffrast.torch as dr
+            try:
+                import nvdiffrast.torch as dr
+            except ImportError:
+                raise RuntimeError("PbrMeshRenderer requires nvdiffrast which is not available on AMD/ROCm")
         
         self.rendering_options = edict({
             "resolution": None,

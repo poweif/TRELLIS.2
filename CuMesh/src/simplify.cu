@@ -1,6 +1,5 @@
 #include "cumesh.h"
 #include "dtypes.cuh"
-#include <cub/cub.cuh>
 #include <c10/cuda/CUDAStream.h>
 #include "shared.h"
 

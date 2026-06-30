@@ -1,8 +1,14 @@
 #pragma once
 
-#include <cuda.h>
-#include <cuda_runtime.h>
-#include <cub/cub.cuh>
+#ifdef __HIP_PLATFORM_AMD__
+  #include <hip/hip_runtime.h>
+  #include <hipcub/hipcub.hpp>
+  namespace cub = hipcub;
+#else
+  #include <cuda.h>
+  #include <cuda_runtime.h>
+  #include <cub/cub.cuh>
+#endif
 #include <c10/cuda/CUDAStream.h>
 #include "utils.h"
 #include "cumesh.h"

@@ -2,7 +2,6 @@
 #include "shared.h"
 
 #include <c10/cuda/CUDAStream.h>
-#include <cub/cub.cuh>
 
 
 namespace cumesh {

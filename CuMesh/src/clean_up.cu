@@ -1,7 +1,6 @@
 #include "cumesh.h"
 #include "dtypes.cuh"
 #include "shared.h"
-#include <cub/cub.cuh>
 #include <c10/cuda/CUDAStream.h>
 
 
@@ -239,10 +238,17 @@ static __global__ void select_first_in_each_group_kernel(
 
 struct int3_decomposer
 {
+#ifdef __HIP_PLATFORM_AMD__
+    __host__ __device__ hipcub::tuple<int&, int&, int&> operator()(int3& key) const
+    {
+        return hipcub::tuple<int&, int&, int&>(key.x, key.y, key.z);
+    }
+#else
     __host__ __device__ ::cuda::std::tuple<int&, int&, int&> operator()(int3& key) const
     {
         return {key.x, key.y, key.z};
     }
+#endif
 };
 
 

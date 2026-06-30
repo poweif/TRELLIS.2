@@ -1,7 +1,6 @@
 #include "cumesh.h"
 #include "dtypes.cuh"
 #include "shared.h"
-#include <cub/cub.cuh>
 
 
 namespace cumesh {

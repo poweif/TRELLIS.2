@@ -1,3 +1,7 @@
+# Root-level test images and pipeline output files
+/*.png
+/*.glb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
