@@ -287,11 +287,12 @@ EOF
 
 ### 3i. Build script
 
-The build script is saved in this repo at `build_pytorch.sh`. It assumes pytorch source
-is cloned to `~/pytorch-src` and that the conda environment `trellis2` exists.
+The build script is at `build_pytorch.sh` in this repo. It assumes pytorch source is
+cloned to `~/pytorch-src` and that the conda environment `trellis2` is active.
 
 ```bash
-bash /path/to/TRELLIS.2/build_pytorch.sh
+conda activate trellis2
+bash build_pytorch.sh
 ```
 
 Build time: approximately 3–4 hours on 24 cores.
@@ -320,38 +321,77 @@ Build time: ~5–10 minutes.
 
 ---
 
-## 5. Rebuild GPU extensions for gfx1151
+## 5. Install Python dependencies
 
-All pre-built GPU extensions in the conda environment target `gfx1100`. They must be
-rebuilt for `gfx1151` or they will crash with SIGSEGV when their GPU kernels are called
-(ROCm cannot dispatch gfx1100 kernels on a gfx1151 GPU).
-
-### 5a. CuMesh
-
-CuMesh is used for mesh extraction (marching cubes / dual contouring) and BVH queries
-during GLB texture baking. It is included in the TRELLIS.2 repo at `CuMesh/`.
+From the repo root with the `trellis2` conda environment active:
 
 ```bash
-cd /path/to/TRELLIS.2/CuMesh
-GPU_ARCHS=gfx1151 pip install --no-build-isolation .
+pip install imageio imageio-ffmpeg tqdm easydict opencv-python-headless ninja \
+            trimesh transformers tensorboard pandas lpips zstandard kornia timm
+pip install git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+sudo apt install -y libjpeg-dev
+pip install pillow-simd
 ```
 
-To verify it compiled for the right arch:
+Notes:
+- **flash-attn is not needed.** `run_sample.py` sets `ATTN_BACKEND=sdpa` which uses
+  PyTorch's built-in `F.scaled_dot_product_attention`. The attention module
+  (`trellis2/modules/sparse/attention/sdpa_varlen.py`) implements variable-length
+  sequences as a Python loop over per-sample SDPA calls, avoiding the padding-induced
+  OOMs that occur with fixed-shape attention on gfx1151.
+- **nvdiffrast is not needed.** The UV rasterisation required for GLB texture baking
+  has been replaced with a pure-PyTorch implementation at
+  `trellis2/utils/uv_rasterize.py` that runs on any backend.
+- `transformers` is required for the BiRefNet background removal model used by
+  `run_sample.py`.
+
+---
+
+## 6. Build GPU extensions for gfx1151
+
+All GPU extensions must be compiled for gfx1151. Pre-built wheels target gfx1100 and
+will SIGSEGV at runtime (ROCm cannot dispatch gfx1100 kernels on a gfx1151 GPU).
+
+### 6a. CuMesh
+
+CuMesh provides mesh extraction (marching cubes / dual contouring), mesh cleanup
+(`fill_holes`, deduplication), UV unwrapping (xatlas), and BVH queries (via cubvh)
+during GLB baking. It is included in this repo at `CuMesh/`. The `build.sh` script
+targets gfx1151 by default:
+
+```bash
+bash CuMesh/build.sh
+```
+
+Or equivalently:
+
+```bash
+GPU_ARCHS=gfx1151 pip install --no-build-isolation CuMesh/
+```
+
+Verify:
 ```bash
 roc-obj-ls $(python -c "import cumesh, os; print(os.path.dirname(cumesh.__file__))")/_C*.so \
   | grep hipv4
-# Should show: hipv4-amdgcn-amd-amdhsa--gfx1151
+# Should show lines containing: hipv4-amdgcn-amd-amdhsa--gfx1151
 ```
 
-### 5b. flex_gemm
+### 6b. o-voxel
 
-flex_gemm provides the sparse convolution backend (`flex_gemm` conv) and `grid_sample_3d`
-for texture baking. It should be built as part of the TRELLIS.2 setup, but if it was
-previously installed for gfx1100, rebuild it:
+o-voxel provides sparse-voxel serialization and GPU rasterisation used by the
+postprocessing pipeline. It is included at `o-voxel/` and auto-detects HIP:
 
 ```bash
-# Locate source (it ships with TRELLIS.2 or is installed from the FlexGEMM repo)
-GPU_ARCHS=gfx1151 pip install --no-build-isolation /path/to/FlexGEMM
+GPU_ARCHS=gfx1151 pip install --no-build-isolation o-voxel/
+```
+
+### 6c. FlexGEMM
+
+FlexGEMM provides the sparse convolution backend and `grid_sample_3d` for texture
+baking. It is included at `FlexGEMM/`:
+
+```bash
+GPU_ARCHS=gfx1151 pip install --no-build-isolation FlexGEMM/
 ```
 
 Verify:
@@ -363,33 +403,31 @@ roc-obj-ls $(python -c "import flex_gemm.kernels.cuda as m; import os; print(m._
 
 ---
 
-## 6. TRELLIS.2 code change
-
-Remove the `HSA_OVERRIDE_GFX_VERSION` environment variable from `run_sample.py`. This
-override was needed when using pre-built gfx1100 wheels, but conflicts with a native
-gfx1151 build (ROCm would try to dispatch gfx1100 kernels from extensions like
-cumesh/flex_gemm that now only contain gfx1151 code, causing an immediate SIGSEGV).
-
-In `run_sample.py`, remove or comment out:
-```python
-os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"   # DELETE THIS LINE
-```
-
----
-
 ## 7. Running the pipeline
 
 ```bash
 conda activate trellis2
 cd /path/to/TRELLIS.2
-python run_sample.py --image assets/example_image/T.png --output out.glb
 ```
 
-No environment variable overrides needed. Expected runtime on Radeon 8060S
-(single-GPU inference, `1024_cascade` pipeline type):
+**Arbitrary input photo** (background removal runs automatically via BiRefNet):
+```bash
+python run_sample.py --image photo.png --output out.glb
+```
+
+**Pre-processed image that already has a transparent background:**
+```bash
+python run_sample.py --image assets/example_image/T.png --output out.glb --no-remove-bg
+```
+
+No environment variable overrides are needed. The `MIOPEN_DEBUG_CONV_WINOGRAD=0` and
+`ATTN_BACKEND=sdpa` settings are applied inside `run_sample.py`.
+
+Expected runtime on Radeon 8060S (single-GPU inference, `1024_cascade` pipeline):
 
 | Stage | Time |
 |---|---|
+| Background removal (BiRefNet on GPU) | ~0:15 |
 | Sparse structure sampling (12 steps) | ~1:20 |
 | Shape SLat 512 pass (12 steps) | ~1:00 |
 | Shape SLat 1024 pass (12 steps) | ~23:00 |
@@ -399,12 +437,12 @@ No environment variable overrides needed. Expected runtime on Radeon 8060S
 
 ---
 
-## 8. Why each patch was needed
+## 8. Why each change was needed
 
 | Problem | Root cause | Fix |
 |---|---|---|
 | `FindHIP.cmake` not found | Ubuntu puts ROCm cmake under `/usr/lib/x86_64-linux-gnu/cmake/` | Added Ubuntu multi-arch path to `CMAKE_MODULE_PATH` in `LoadHIP.cmake` |
-| `rocm_version.h` not found | Ubuntu doesn't install `rocm-core` by default | Fall back to `hip_version.h` in `LoadHIP.cmake` |
+| `rocm_version.h` not found | Ubuntu doesn't install `rocm-core` headers by default | Fall back to `hip_version.h` in `LoadHIP.cmake` |
 | `device library not found` (hipcc) | With `ROCM_PATH=/usr`, hipcc looks for bitcode at `/usr/amdgcn/bitcode` which doesn't exist | Symlink `/usr/amdgcn/bitcode` → LLVM 21 bitcode dir |
 | `constexpr` compile error on `C10_WARP_SIZE` | `warpSize` in HIP is a runtime struct, not a constexpr; gfx1151 uses 32-wide wavefront | Use `__AMDGCN_WAVEFRONT_SIZE__` compile-time macro |
 | `.c` files fail with `-std=c++17` | `HIP_CXX_FLAGS` (containing `-std=c++17`) is applied to all targets including C files | Remove `-std=c++17` from `HIP_CXX_FLAGS` |
@@ -416,5 +454,8 @@ No environment variable overrides needed. Expected runtime on Radeon 8060S
 | `libamdhip64.so.6` not found | `libaotriton_v2.so` bundled in ROCm wheels was compiled against ROCm 6.x | Symlink `.so.6` → actual ROCm 7.1 `.so.7` |
 | torchvision ABI mismatch | Pre-built wheel compiled against torch 2.6.0 | Rebuild from source at v0.22.0 |
 | `pkg_resources` missing (torchvision build) | `setuptools ≥ 80` removed `pkg_resources` | Pin `setuptools < 80` |
-| Segfault in decode / mesh extraction | cumesh compiled for gfx1100, ROCm cannot dispatch on gfx1151 | Rebuild cumesh with `GPU_ARCHS=gfx1151` |
-| Segfault with `HSA_OVERRIDE_GFX_VERSION=11.0.0` | After rebuilding cumesh/flex_gemm for gfx1151, the override causes ROCm to look for gfx1100 kernels that no longer exist in those `.so` files | Remove `HSA_OVERRIDE_GFX_VERSION` entirely |
+| Segfault in decode / mesh extraction | cumesh/o-voxel/FlexGEMM compiled for gfx1100, ROCm cannot dispatch on gfx1151 | Rebuild all GPU extensions with `GPU_ARCHS=gfx1151` |
+| `miopenStatusUnknownError` during BiRefNet GPU inference | MIOpen probes Winograd convolution when benchmarking new shapes; the Winograd kernel assembly (`Conv_Winograd_v30_3_1_fp32_f3x2_stride1.s`) is missing for gfx1151, causing the entire forward pass to raise an exception | Set `MIOPEN_DEBUG_CONV_WINOGRAD=0` (done in `run_sample.py`) |
+| nvdiffrast unavailable on ROCm | nvdiffrast has no ROCm backend | Replaced `dr.rasterize` / `dr.interpolate` calls in `postprocess.py` and `trellis2_texturing.py` with `trellis2/utils/uv_rasterize.py` (pure PyTorch) |
+| OOM in sparse attention | Padding variable-length sequences to a fixed maximum length before computing attention caused large intermediate tensors | Replaced with `sdpa_varlen` (per-sample `F.scaled_dot_product_attention` in a Python loop); set `ATTN_BACKEND=sdpa` in `run_sample.py` |
+| Segfault with `HSA_OVERRIDE_GFX_VERSION=11.0.0` | After rebuilding extensions for gfx1151, the override causes ROCm to look for gfx1100 kernels that no longer exist | Remove `HSA_OVERRIDE_GFX_VERSION` entirely (not set in `run_sample.py`) |
