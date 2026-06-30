@@ -419,6 +419,31 @@ installed package):
 **Also apply this same patch after installation** (the installed copy is at
 `$CONDA_PREFIX/lib/python3.10/site-packages/aiter/dist/parallel_state.py`).
 
+### 5b-iv-b. Patch 4 — flash_attn/utils/distributed.py compatibility
+
+`flash_attn/utils/distributed.py` (installed at
+`$CONDA_PREFIX/lib/python3.10/site-packages/flash_attn/utils/distributed.py`)
+has the same two issues: it imports `ProcessGroup` unconditionally and tries to
+assign from `_all_gather_base` which also doesn't exist in our build. Apply these
+fixes to the installed file:
+
+```diff
+-from torch.distributed import ProcessGroup
++try:
++    from torch.distributed import ProcessGroup
++except ImportError:
++    ProcessGroup = None
+
+ if "all_gather_into_tensor" not in dir(torch.distributed):
+-    torch.distributed.all_gather_into_tensor = torch.distributed._all_gather_base
++    if hasattr(torch.distributed, "_all_gather_base"):
++        torch.distributed.all_gather_into_tensor = torch.distributed._all_gather_base
+ if "reduce_scatter_tensor" not in dir(torch.distributed):
+-    torch.distributed.reduce_scatter_tensor = torch.distributed._reduce_scatter_base
++    if hasattr(torch.distributed, "_reduce_scatter_base"):
++        torch.distributed.reduce_scatter_tensor = torch.distributed._reduce_scatter_base
+```
+
 ### 5b-v. Build aiter (skip Composable Kernels)
 
 Composable Kernels (CK) requires AMD's proprietary clang fork and cannot be built with
@@ -581,4 +606,5 @@ Expected runtime on Radeon 8060S (single-GPU inference, `1024_cascade` pipeline)
 | `flash_attn` unavailable on gfx1151 (pre-built) | `flash-attn`'s HIP backend only supports CDNA GPUs (gfx942 / MI series); it has no pre-built gfx1151 wheel | Build the ROCm fork with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` — Triton JIT-compiles the kernels for gfx1151 at first use (see section 5b) |
 | `ValueError: invalid literal for int()` during aiter build | Ubuntu's `hipconfig --version` prints `"HIP version: X.Y.Z"` with a prefix; aiter's `get_hip_version()` passes the full line to `int()` | Patch `get_hip_version()` to strip the `"HIP version: "` prefix and take only the first line |
 | `ImportError: cannot import name 'Backend' from 'torch.distributed'` | Our custom PyTorch was built without the distributed C10d backend; aiter imports `Backend` unconditionally | Wrap the import in a `try/except` in `aiter/dist/parallel_state.py` (patch both source and installed copy) |
+| `AttributeError: module 'torch.distributed' has no attribute '_all_gather_base'` | `flash_attn/utils/distributed.py` tries to backfill `all_gather_into_tensor` from `_all_gather_base`; neither exists in our build | Guard both assignments with `hasattr()` checks; also wrap `ProcessGroup` import in `try/except` |
 | Segfault with `HSA_OVERRIDE_GFX_VERSION=11.0.0` | After rebuilding extensions for gfx1151, the override causes ROCm to look for gfx1100 kernels that no longer exist | Remove `HSA_OVERRIDE_GFX_VERSION` entirely (not set in `run_sample.py`) |
