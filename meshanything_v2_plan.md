@@ -67,9 +67,41 @@ See `amd_workarounds.md` for full detail — the short version:
 - Hard cap: 1600 faces — this is a **training-distribution** limit, not just an
   inference knob; don't expect more no matter the settings.
 - Expects **+Y-up** input.
-- Reference perf: ~8GB VRAM, ~45s/mesh on an A6000. Expect slower + a first-call JIT
-  compile tax here (Triton kernels JIT-compile on first use, as already observed for
-  flash-attn in `amd_workarounds.md` §5b-vi).
+- Reference perf: ~8GB VRAM, ~45s/mesh on an A6000. **Confirmed much slower here, and
+  why**: measured `gpu_busy_percent` (via `/sys/class/drm/card1/device/gpu_busy_percent`)
+  during an actual generation run and got a steady ~5%, with the CPU thread pegged at
+  ~100% — i.e. genuinely GPU-resident (confirmed via VRAM allocation) but CPU-dispatch-bound,
+  not GPU-compute-bound. This is not a backend misconfiguration: TRELLIS.2's own
+  `trellis2/modules/attention/full_attn.py:105-113` calls the exact same installed
+  `flash_attn` package, which resolves to the same Triton fallback
+  (`aiter.ops.triton._triton_kernels.flash_attn_triton_amd`, confirmed by reading
+  the installed `flash_attn_interface.py`'s backend-selection logic — it only ever
+  chooses between a CDNA-only compiled `flash_attn_2_cuda` extension, unavailable on
+  gfx1151, or this Triton path). aiter also ships a compiled/native MHA path
+  (`aiter/ops/mha.py`), but it's CK-Tile-based, and `CK_DIR` doesn't even exist in this
+  install (`aiter_meta/3rdparty/composable_kernel` — CK was deliberately excluded per
+  `amd_workarounds.md` §5b-v, since it needs AMD's proprietary clang fork). So Triton is
+  the only real option, same as the rest of this repo.
+
+  The reason MeshAnythingV2 is disproportionately slow despite using the *same* backend as
+  the rest of the pipeline: TRELLIS.2's diffusion sampling does ~12 steps, each one full-
+  sequence forward pass over a large batch in parallel — few `flash_attn` calls, each with
+  a large payload, so Triton's per-call dispatch overhead is amortized (this is why the
+  ~23-minute Shape SLat 1024 pass in `amd_workarounds.md`'s timing table is tolerable).
+  MeshAnythingV2's `.generate()` calls the full model once per newly-generated token —
+  up to ~10,080 sequential calls for a 1600-face mesh (`n_max_triangles * face_per_token *
+  max_seq_ratio` = 1600*9*0.7) — each with a tiny compute payload but the same fixed
+  per-call Triton launch overhead. That fixed cost, paid ~10,080 times in a row, dominates
+  wall-clock time.
+
+  **Measured, not estimated**: once Triton's on-disk kernel cache is warm (first run pays
+  a one-time JIT tax that dominated an initial ~30+ minute test run before it was killed
+  — see patches below for what that first run also caught), a 2000-token capped run took
+  43.6s → **~21.8ms/token**. Extrapolating to a full ~10,080-token generation: **~220s
+  (~3.7 min)** — much worse than the A6000's 45s reference, but far more tractable than
+  the worst-case fear of tens of minutes. First-run-ever (cold Triton cache) will be
+  substantially slower than this; budget extra time for whichever session runs Phase 6's
+  first real end-to-end test.
 - Dependencies are pure Python (`trimesh`, `accelerate`, `einops`, `einx`, `optimum`,
   `omegaconf`, `opencv-python`, `transformers`, `numpy`, `huggingface_hub`, `matplotlib`,
   `gradio`) except `mesh2sdf` (out of scope, see Non-goals) and flash-attn (already
@@ -158,7 +190,8 @@ this plan should assume it's being called from a CLI.
 ## Directory / artifact layout
 
 ```
-third_party/MeshAnythingV2/            # git submodule, pinned commit
+third_party/MeshAnythingV2/            # vendored source (copied in, not a submodule)
+                                        # from 461d3b6ed750ab3443281b2e4a0e30e8ee98097e (2025-04-29)
 tools/mesh_refine_meshanything.py      # standalone CLI entry point (thin argparse wrapper)
 trellis2/utils/mesh_rasterizer.py      # NEW: pure-PyTorch camera-viewpoint differentiable rasterizer
 trellis2/utils/sds_geometry_refine.py  # NEW: SDS geometry-refinement loop
@@ -210,31 +243,159 @@ Also confirm a `diffusers`-based 2D diffusion checkpoint can be loaded and run a
 pass on this ROCm stack (needed by Phase 3), without pulling in `xformers`.
 
 **Tasks**:
-1. Add MeshAnything V2 as a git submodule at `third_party/MeshAnythingV2`, pinned to a
-   specific commit (record the SHA in this doc once chosen).
+1. Vendor MeshAnything V2's source directly into `third_party/MeshAnythingV2` (clone it
+   elsewhere, copy the files in, drop the `.git` dir — tracked as regular files in this
+   repo, not a submodule, matching how `aiter` was vendored in `amd_workarounds.md` §5b-i).
+   Record the upstream commit SHA it was copied from in this doc.
+   **Done**: vendored from `buaacyw/MeshAnythingV2@461d3b6ed750ab3443281b2e4a0e30e8ee98097e`
+   (2025-04-29), full repo tree (~4.6MB, includes `demo/`/`examples/`/training code —
+   kept for fidelity to upstream even though training code is out of scope for this plan
+   — except `demo/demo_video.gif`, a 16MB README demo clip with no functional use, dropped
+   before committing to avoid a large binary in git history).
 2. Install its deps with `--no-deps` (never let it try to reinstall torch/numpy/flash-attn):
    `pip install --no-deps -r third_party/MeshAnythingV2/requirements.txt`, then check
    each package individually against what's already installed for version conflicts;
    hand-resolve rather than blind-pinning to the repo's exact versions.
+   **Done**: already installed (untouched): `transformers 5.12.1`, `numpy 2.2.6`,
+   `huggingface_hub 1.20.1`, `trimesh 4.12.2`, `einops 0.8.2`, `gradio 6.0.1`,
+   `opencv 4.13.0`. Installed fresh with `--no-deps` (and their own missing transitive
+   deps, same way): `accelerate 1.14.0`, `einx 0.4.3`, `optimum 2.2.0`, `omegaconf 2.3.1`,
+   `matplotlib 3.10.9`, plus `scikit-image 0.25.2` (needed transitively by
+   `MeshAnything/miche/michelangelo/models/tsal/inference_utils.py`'s `skimage.measure`
+   import — not in `requirements.txt` at all, only surfaced by actually trying to
+   construct the model). `mesh2sdf` and `spaces` were skipped: `mesh2sdf` is only used by
+   the out-of-scope `--input_type mesh` path, and `spaces` (HF Spaces decorator) turned out
+   to be unused by anything in the vendored tree despite being pinned in
+   `requirements.txt`. torch/numpy/transformers versions confirmed unchanged after all
+   installs.
 3. Re-run the flash-attn smoke test from `amd_workarounds.md` §5b-vi after any
    `transformers`/`accelerate` version change, to confirm it's still intact.
+   **Done**: re-ran verbatim after installing `accelerate` — still passes
+   (`flash_attn_varlen_func` returns the expected `(32, 8, 64)` shape).
 4. Load the checkpoint (`MeshAnythingV2.from_pretrained("Yiwen-ntu/meshanythingv2")`) and
    do one forward pass **on CPU first** with a synthetic point cloud, before touching
    ROCm at all — isolates "does the checkpoint/class even load" from "does it run on our
    GPU stack".
+   **Revised**: a CPU forward pass isn't actually meaningful here —
+   `ShapeOPTDecoder.forward` hard-`raise`s unless `_use_flash_attention_2` is true
+   (`third_party/MeshAnythingV2/MeshAnything/models/shape_opt.py`), and flash-attn's
+   Triton backend requires a GPU. Did the CPU-only part that *is* meaningful instead:
+   construction (`MeshAnythingV2()`) and checkpoint loading
+   (`.from_pretrained(...)`) both succeed on CPU, which isolated several structural bugs
+   (see patches below) before spending any GPU/Triton JIT time on them.
 5. Retry on GPU with `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` set. Expect the reference
    `main.py` / model class to hardcode `.cuda()` / `device='cuda'` in places — patch these
    to a passed-in `device` variable (matches the `self.device` pattern already used
    throughout `trellis2/pipelines/*.py`). Document every patch as a diff block, same style
-   as `amd_workarounds.md`, so it's reproducible after a submodule update.
+   as `amd_workarounds.md`, so it's reproducible if the vendored copy is ever refreshed
+   from a newer upstream commit.
+   **Done, but the real issues were different from what this task anticipated** — see
+   "Patches applied" below. The only actual hardcoded-`.cuda()` case
+   (`MeshAnything/miche/encode.py:19`) turned out to be in a demo-only function
+   (`load_surface`, used by `reconstruction()`, never called from our inference path) —
+   `load_model()` itself (which *is* on our path) already does proper
+   `device = "cuda" if torch.cuda.is_available() else "cpu"`, so no patch was needed there.
+   The real blocker was `shape_opt.py` subclassing `transformers.models.opt.modeling_opt`
+   internals against a since-changed API (transformers went 4.39→5.12 upstream while this
+   checkpoint's code was written against 4.39-era internals) — a much bigger patch than
+   "hardcoded device strings." Confirmed working end-to-end with a real forward pass on
+   the gfx1151 GPU (see Phase 6 timing note above for measured perf).
 6. Install `diffusers` (pip, pure Python) and load one candidate image-conditioned
    diffusion checkpoint (see Phase 3's spike list), run a single denoising step on the
    gfx1151 GPU using default/SDPA attention — confirm no `xformers` import gets pulled in
    transitively and no CUDA-only op trips.
+   **Done**: installed `diffusers 0.38.0` with `--no-deps` (torch/numpy/transformers
+   confirmed unaffected). Smoke-tested with `lambdalabs/sd-image-variations-diffusers`
+   (`image_encoder` + `unet` only, skipped the VAE/text-encoder — not needed for a
+   noise-prediction-only test). This is a CLIP-image-embedding-conditioned UNet, i.e.
+   genuinely image-conditioned (not text-to-image) — a reasonable stand-in for Phase 3's
+   real candidate evaluation, though it is **not** itself a 3D/novel-view-aware model like
+   Stable-Zero123 would be; Phase 3 still needs to properly evaluate the Zero-1-to-3-family
+   vs. depth-ControlNet options for actual 3D-consistent SDS guidance — this only proves
+   the mechanical plumbing (diffusers + image conditioning + backprop) works on this stack.
+   Results: `unet.attn_processors` uses `AttnProcessor2_0` (PyTorch SDPA) by default —
+   confirmed `'xformers' not in sys.modules` both before and after the run, so nothing
+   pulled it in. Ran one UNet forward pass conditioned on a CLIP image embedding, computed
+   a dummy loss, and called `.backward()` — gradient successfully reached the input latents
+   (`latents.grad` populated, nonzero), which is the actual mechanism Phase 3's SDS loop
+   depends on. Hit the same MIOpen Winograd convolution bug already documented in
+   `amd_workarounds.md` (`Conv_Winograd_v30_3_1_fp16_dot2_f3x2_stride1.s` load failure) —
+   same fix applies: `MIOPEN_DEBUG_CONV_WINOGRAD=0`. Not set by default in a bare script
+   (only `run_sample.py` sets it); Phase 3's actual SDS module needs to set it too, or rely
+   on the caller having done so.
 
 **Acceptance**: a bare script produces *some* mesh from a hand-built point cloud, running
-on the gfx1151 GPU, using this repo's existing torch/flash-attn — not upstream pins. A
-separate bare script runs one diffusion U-Net forward+backward pass on the same GPU.
+on the gfx1151 GPU, using this repo's existing torch/flash-attn — not upstream pins. **Met**
+— see "Patches applied" below for what it took. A separate bare script runs one diffusion
+U-Net forward+backward pass on the same GPU — **met**, see task 6 above.
+
+**Phase 0 is complete.**
+
+#### Patches applied (Phase 0, task 5)
+
+All patches are in the vendored copy at `third_party/MeshAnythingV2/`, not upstream — if
+the vendored source is ever refreshed from a newer commit, these need reapplying (check
+first whether upstream has since fixed them independently).
+
+**1. `MeshAnything/models/shape_opt.py` — `ShapeOPTDecoder.forward` rewritten for
+transformers>=5's Cache API.**
+
+Root cause: this file subclasses `transformers.models.opt.modeling_opt` internals
+(`OPTDecoderLayer`, `OPTDecoder`) and hand-rolls the decoder's `forward()`, copy-pasted
+from the ~4.39-era OPT implementation. Confirmed via `inspect.signature` against the
+installed transformers 5.12.1 that `OPTDecoderLayer.forward` now returns a bare
+`torch.Tensor` (not a `(hidden_states, attn_weights, present_key_value)` tuple) and no
+longer accepts `layer_head_mask`/`past_key_value`/`output_attentions` as named
+parameters — they're silently absorbed into `**kwargs` and ignored rather than raising,
+so the old call pattern would have produced silently-wrong tensor-indexed-as-tuple
+behavior rather than a clean crash. `past_key_values` is also now a `Cache` object, not a
+legacy tuple-of-tuples.
+
+Fix: added `from transformers.cache_utils import Cache, DynamicCache` and
+`from transformers.masking_utils import create_causal_mask`, then rewrote
+`ShapeOPTDecoder.forward`'s cache/position/causal-mask bookkeeping and per-layer call to
+match the pattern in the *installed* transformers' own current `OPTDecoder.forward`
+(fetched via `inspect.getsource` and adapted — not guessed). `head_mask`/
+`output_attentions` handling was dropped rather than reimplemented against the new API,
+since MeshAnythingV2's actual inference path never sets them (always `None`/`False`).
+
+**2. `MeshAnything/models/shape_opt.py` — `ShapeOPTDecoder.__init__` layer construction
+missing `layer_idx`.**
+
+```diff
+- self.layers = nn.ModuleList([OPTDecoderLayer(config) for _ in range(config.num_hidden_layers)])
++ self.layers = nn.ModuleList([OPTDecoderLayer(config, layer_idx=idx) for idx in range(config.num_hidden_layers)])
+```
+
+`OPTDecoderLayer.__init__` in transformers 5.12.1 takes an optional `layer_idx` used to
+index into a shared `Cache` object; omitting it doesn't error at construction but breaks
+KV-caching at generation time (transformers itself warns about exactly this: "will lead
+to errors during the forward call if caching is used").
+
+**3. `MeshAnything/models/meshanything_v2.py` — removed two calls to APIs no longer
+present in transformers>=5.**
+
+```diff
+- self.transformer = AutoModelForCausalLM.from_config(
+-     config=self.config, use_flash_attention_2 = True
+- )
+- self.transformer.to_bettertransformer()
++ self.transformer = AutoModelForCausalLM.from_config(config=self.config)
+```
+
+`use_flash_attention_2=True` is a removed legacy kwarg (`config._attn_implementation` is
+already set to `"flash_attention_2"` earlier in `__init__`, which is what modern
+transformers actually reads). `to_bettertransformer()` no longer exists on
+`PreTrainedModel` at all (confirmed via `hasattr`) — HF's BetterTransformer integration
+was removed/superseded by native SDPA/flash-attention, which is already selected via
+`attn_implementation`.
+
+**4. Dtype mismatch (not a code patch, a calling-convention finding)**: the checkpoint
+loads in fp32 by default; the reference `main.py` casts input point clouds to fp16
+(`np.float16`). Calling the model with a fp16 input against fp32 weights raises
+`RuntimeError: mat1 and mat2 must have the same dtype`. Fix at the call site (not in
+vendored source): `model = model.to('cuda').half()` before running inference — matches
+upstream's evident intent (fp16 input) rather than a divergence to patch around.
 
 ### Phase 1 — Vendoring & bridge module skeleton
 
