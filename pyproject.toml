@@ -1,0 +1,40 @@
+# Packaging for the trellis2 package, so projects that build on this fork can install it
+# (`pip install -e .`) instead of running from the repo root. Upstream TRELLIS.2 has none.
+#
+# Install the ROCm toolchain and the native extensions first (docs/amd_rocm.md, sections 3-6):
+# torch / torchvision / flash-attn are built from source, and cumesh / flex_gemm / o_voxel come
+# from CuMesh/, FlexGEMM/ and o-voxel/ in this repo. With those already installed, pip finds
+# every dependency below satisfied; without them it would fetch the CUDA builds from PyPI.
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trellis2"
+version = "0.0.1"
+description = "TRELLIS.2 image-to-3D, ROCm (gfx1151) fork"
+requires-python = ">=3.10"
+# What image-to-3D inference imports (Trellis2ImageTo3DPipeline, rembg, o_voxel.postprocess).
+# flash-attn, the default attention backend, isn't listed: on ROCm it is the ROCm fork built
+# per docs/amd_rocm.md 5b, and ATTN_BACKEND=sdpa works without it.
+dependencies = [
+    "torch",
+    "torchvision",
+    "numpy",
+    "pillow",
+    "opencv-python-headless",
+    "easydict",
+    "huggingface_hub",
+    "safetensors",
+    "transformers",
+    "trimesh",
+    "tqdm",
+    "utils3d",
+    "cumesh",
+    "flex_gemm",
+    "o_voxel",
+]
+
+[tool.setuptools.packages.find]
+include = ["trellis2*"]

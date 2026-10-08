@@ -291,6 +291,15 @@ roc-obj-ls $(python -c "import flex_gemm.kernels.cuda as m; import os; print(m._
 # Should show: hipv4-amdgcn-amd-amdhsa--gfx1151
 ```
 
+### 6d. trellis2 (for projects that build on this repo)
+
+Running from the repo root needs no install. To import `trellis2` from another project, install
+it as a package after 6a–6c (dependencies are in `pyproject.toml`):
+
+```bash
+pip install --no-build-isolation -e .
+```
+
 ---
 
 ## 7. Running the pipeline
@@ -366,3 +375,5 @@ deterministic.
 | `ImportError: cannot import name 'Backend' from 'torch.distributed'` | Our custom PyTorch was built without the distributed C10d backend; aiter imports `Backend` unconditionally | Wrap the import in a `try/except` in `aiter/dist/parallel_state.py` (`patches/aiter-rocm.patch`) |
 | `AttributeError: module 'torch.distributed' has no attribute '_all_gather_base'` | `flash_attn/utils/distributed.py` tries to backfill `all_gather_into_tensor` from `_all_gather_base`; neither exists in our build | Guard both assignments with `hasattr()` checks; also wrap `ProcessGroup` import in `try/except` |
 | Segfault with `HSA_OVERRIDE_GFX_VERSION=11.0.0` | After rebuilding extensions for gfx1151, the override causes ROCm to look for gfx1100 kernels that no longer exist | Remove `HSA_OVERRIDE_GFX_VERSION` entirely (never set by this repo) |
+| `pip install` pulls CUDA CuMesh / FlexGEMM from GitHub | Upstream `o-voxel/pyproject.toml` pins both as `git+https://github.com/JeffreyXiang/...` dependencies | Depend on plain `cumesh` / `flex_gemm`, satisfied by the vendored ROCm builds in `CuMesh/` and `FlexGEMM/` |
+| A cloned conda env still loads libraries from the original env | The from-source build bakes `RPATH=<env>/lib:$ORIGIN/lib` into `torch/_C*.so` | After `conda create --clone`, repoint it: `patchelf --force-rpath --set-rpath "$CONDA_PREFIX/lib:\$ORIGIN/lib" <torch>/_C*.so` |
