@@ -1,0 +1,20 @@
+#!/bin/bash
+# Strips -I/usr/include and -isystem /usr/include from the arg list before calling the real
+# GCC 12 g++. Needed because torch's cpp_extension auto-injects /usr/include, and mixing GCC 12's
+# own bundled libstdc++ headers with the system's /usr/include glibc pthread headers produces a
+# __gthread_cond_t/__GTHREAD_COND_INIT type conflict (see AlphaWrap/BUILD_NOTES.md).
+REAL_GXX=~/miniconda3/envs/cgal-build2/bin/x86_64-conda-linux-gnu-g++
+args=()
+skip_next=0
+for arg in "$@"; do
+  if [ "$skip_next" = "1" ]; then
+    skip_next=0
+    continue
+  fi
+  case "$arg" in
+    -I/usr/include) continue ;;
+    -isystem) skip_next=1; continue ;;
+    *) args+=("$arg") ;;
+  esac
+done
+exec "$REAL_GXX" "${args[@]}"
