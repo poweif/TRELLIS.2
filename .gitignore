@@ -211,3 +211,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Vendored third-party build artifacts (source is tracked, build output is not)
+third_party/QuadriFlow/build/
+third_party/AlphaWrap/build/
+# Host-specific shared libs copied from the CGAL build env; only useful alongside the
+# (also ignored) build/alpha_wrap binary -- see third_party/AlphaWrap/BUILD_NOTES.md.
+third_party/AlphaWrap/runtime_libs/
+
+# Generated sample outputs from tools/quad_postprocess.py (regenerable, not source)
+/quad_postprocess_outputs/
