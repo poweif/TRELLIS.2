@@ -5,8 +5,6 @@ import numpy as np
 import torch
 import trimesh
 
-os.environ["MIOPEN_DEBUG_CONV_WINOGRAD"] = "0"
-
 _THIRD_PARTY_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'third_party', 'MeshAnythingV2'))
 if _THIRD_PARTY_DIR not in sys.path:
     sys.path.insert(0, _THIRD_PARTY_DIR)

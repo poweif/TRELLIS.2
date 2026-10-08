@@ -46,7 +46,6 @@ def refine_geometry(mesh: trimesh.Trimesh, reference_image, n_iters=100, device=
     SDS-guided geometry refinement.
     """
     from PIL import Image
-    os.environ["MIOPEN_DEBUG_CONV_WINOGRAD"] = "0"
 
     if seed is not None:
         rng = np.random.RandomState(seed)

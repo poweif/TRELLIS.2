@@ -11,7 +11,7 @@ try:
     import nvdiffrast.torch as dr
 except ImportError:
     dr = None
-from trellis2.utils.uv_rasterize import rasterize_uv, interpolate_uv
+from .uv_rasterize import rasterize_uv, interpolate_uv
 import cumesh
 
 

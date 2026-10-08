@@ -14,7 +14,7 @@ try:
     import nvdiffrast.torch as dr
 except ImportError:
     dr = None
-from ..utils.uv_rasterize import rasterize_uv, interpolate_uv
+from o_voxel.uv_rasterize import rasterize_uv, interpolate_uv
 import cv2
 import flex_gemm
 

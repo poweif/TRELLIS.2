@@ -553,7 +553,7 @@ def transfer_texture(vertices: np.ndarray, faces: np.ndarray, uvs: np.ndarray,
     faces_t = torch.tensor(faces, dtype=torch.long, device=device).contiguous()
     uvs_t = torch.tensor(uvs, dtype=torch.float32, device=device).contiguous()
 
-    from .uv_rasterize import rasterize_uv, interpolate_uv
+    from o_voxel.uv_rasterize import rasterize_uv, interpolate_uv
 
     rast, _ = rasterize_uv(uvs_t, faces_t.int(), texture_size, texture_size)
     mask = rast[0, ..., 3] > 0
