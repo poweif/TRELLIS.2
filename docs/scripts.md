@@ -64,12 +64,21 @@ Also reachable from `tools/quad_postprocess.py --source meshanything`. Design: [
 | `trellis2/utils/sds_geometry_refine.py` | `refine_geometry`: SDS-guided vertex-offset optimization against a reference image. | `lambdalabs/sd-image-variations-diffusers`, `openai/clip-vit-large-patch14` | works (legacy path only) |
 | `trellis2/utils/mesh_rasterizer.py` | Pure-PyTorch mesh renderer (normals/depth). Visibility is rasterized without gradients; shading is differentiable, which SDS relies on. Also used for debug renders. | — | works |
 
-## 4. Development checks
+## 4. Tests and checks
 
-`tests/phase/test_phase*.py`: pytest-style checks written phase by phase for the MeshAnything /
-SDS work (section 3). Run from the repo root: `python -m pytest tests/phase`. They need the GPU
-and the models above. Phase 3/5 read `samples/can.{glb,png}`, which are local and untracked.
-Nothing here covers the quad pipeline (section 2).
+| File | What it does |
+|---|---|
+| `tests/test_quad_utils.py` | CPU-only: OBJ n-gon round trip, `quad_fraction`, `face_edges`, irregular vertices, `remove_small_quad_islands`, `compute_rho` on spheres. |
+| `tests/test_inventory.py` | Fails if a file in `tools/`, a root `*.py`, or a fork module in `trellis2/utils/` is missing from this doc. |
+| `tests/conftest.py` | Skips `tests/phase/` unless `RUN_PHASE_TESTS=1`. |
+| `scripts/smoke_test.sh` | Runs the tests, `--help` for every CLI, a standalone `o_voxel` import, and checks that the native extensions and QuadriFlow / Alpha Wrap are available. No GPU-heavy work and no model downloads. |
+
+Run `python -m pytest tests` (about 1 s) or `scripts/smoke_test.sh` from the repo root.
+
+`tests/phase/test_phase*.py`: checks written phase by phase for the MeshAnything / SDS work
+(section 3). Run them with `RUN_PHASE_TESTS=1 python -m pytest tests/phase`. They need the GPU and
+the models above, and some run inference at import time. Phase 3/5 read `samples/can.{glb,png}`,
+which are local and untracked.
 
 | File | Covers |
 |---|---|
@@ -84,10 +93,14 @@ Nothing here covers the quad pipeline (section 2).
 | File | What it does |
 |---|---|
 | `setup.sh` (modified) | Upstream installer; CuMesh/FlexGEMM install from the vendored copies in this repo instead of upstream git. |
-| `build_pytorch.sh` | Builds PyTorch from source for gfx1151. |
+| `build_pytorch.sh` | Builds PyTorch from source for gfx1151 (applies `patches/` first). |
+| `scripts/apply_rocm_patches.sh` | Applies `patches/` to PyTorch / flash-attention / aiter checkouts (idempotent). |
+| `patches/` | PyTorch v2.7.0, flash-attention and aiter source patches + CK `config.h`. |
+| `requirements-fork.txt` | Pip dependencies the fork adds on top of upstream. |
 | `third_party/AlphaWrap/` | CGAL Alpha Wrap CLI + `alpha_wrap_ext` binding; see `BUILD_NOTES.md`. |
 | `third_party/QuadriFlow/` | QuadriFlow + `quadriflow_ext` binding. |
-| `third_party/MeshAnythingV2/` | Vendored MeshAnythingV2, patched for transformers ≥ 5. |
+| `third_party/MeshAnythingV2/` | Vendored MeshAnythingV2, patched for transformers ≥ 5 (`VENDORED.md`). |
+| `CuMesh/`, `FlexGEMM/` | Vendored with ROCm changes (`VENDORED.md`). |
 
 ## Environment variables
 

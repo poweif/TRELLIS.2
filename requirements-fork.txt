@@ -1,0 +1,33 @@
+# Extra Python dependencies of this fork, on top of upstream TRELLIS.2's own (see setup.sh) and
+# the ROCm stack built from source per docs/amd_rocm.md: torch 2.7.0, torchvision 0.22.0,
+# triton, flash-attn (ROCm fork) and aiter are NOT pip-installable here and are not listed.
+# Versions are the ones this fork runs with on the gfx1151 dev box.
+#
+#   pip install -r requirements-fork.txt
+
+setuptools<80                    # pkg_resources is still needed by torchvision's setup.py
+
+# Generation / background removal / DINOv3 (transformers >= 5 is required by the patched
+# MeshAnythingV2 and by DINOv3's layer access)
+transformers==5.12.1
+huggingface_hub==1.20.1
+opencv-python-headless==4.13.0.92
+trimesh==4.12.2
+
+# Quad post-processing (tools/quad_postprocess.py)
+open3d-cpu==0.19.0               # mesh_repair: vertex clustering / orientation repair
+pymeshlab==2025.7.post1          # subdivision: n-gon-aware Catmull-Clark
+scipy==1.15.3
+networkx==3.4.2
+
+# MeshAnything refinement (tools/mesh_refine_meshanything.py)
+diffusers==0.38.0                # SDS: lambdalabs/sd-image-variations-diffusers
+accelerate==1.14.0
+omegaconf==2.3.1                 # MeshAnythingV2 config loading
+einops==0.8.2
+
+# Building the in-process QuadriFlow / Alpha Wrap bindings
+pybind11==3.0.4
+
+# Tests (python -m pytest tests)
+pytest==9.1.1
