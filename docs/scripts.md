@@ -39,7 +39,7 @@ automatically.
 Entry point: **`tools/quad_postprocess.py`** (`--input --output`, plus `--source direct|meshanything`,
 `--quad-obj`, `--no-alpha-wrap`, `--subdivide-levels`, `--adaptive`, `--debug-dir`, …).
 Pipeline: repair → Alpha Wrap (watertight) → QuadriFlow → snap to reference → separatrix
-patches → UV unwrap → texture transfer → GLB. Design and results: `quadriflow_postprocess_plan.md`.
+patches → UV unwrap → texture transfer → GLB. Design and results: [`quad_pipeline.md`](quad_pipeline.md).
 
 | Module | What it does | Needs | Status |
 |---|---|---|---|
@@ -56,7 +56,7 @@ patches → UV unwrap → texture transfer → GLB. Design and results: `quadrif
 
 Entry point: **`tools/mesh_refine_meshanything.py`** (`--input --output`, `--algo legacy|direct-sample`,
 `--reference-image`, `--skip-sds`, `--sampling`, `--quad-remesh OUT.obj`, `--debug-dir`, …).
-Also reachable from `tools/quad_postprocess.py --source meshanything`. Design: `mesh_improvements.md`.
+Also reachable from `tools/quad_postprocess.py --source meshanything`. Design: [`quad_pipeline.md`](quad_pipeline.md#meshanything-refinement-toolsmesh_refine_meshanythingpy).
 
 | Module | What it does | Needs | Status |
 |---|---|---|---|

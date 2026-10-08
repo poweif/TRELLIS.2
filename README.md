@@ -1,5 +1,33 @@
 ![](assets/teaser.webp)
 
+# TRELLIS.2 for AMD ROCm (fork)
+
+> [!NOTE]
+> **This is a fork for AMD ROCm (Strix Halo, Radeon 8060S, gfx1151).** CUDA is not a supported
+> target here. Upstream CUDA code paths are kept unchanged to ease rebasing, but are untested.
+> The original project's README follows the "Fork additions" section.
+
+## Fork additions
+
+| | |
+|---|---|
+| **ROCm build** | Custom PyTorch 2.7.0 + ROCm 7.1, flash-attn (Triton backend), and gfx1151 builds of CuMesh / o-voxel / FlexGEMM. Full guide: [`docs/amd_rocm.md`](docs/amd_rocm.md); source patches in [`patches/`](patches/) via `scripts/apply_rocm_patches.sh`. |
+| **Generation** | `python run_sample.py --image photo.png --output out.glb` runs background removal, image-to-3D and texture baking (~4 min on the 8060S). nvdiffrast is replaced by a pure-PyTorch UV rasterizer. |
+| **Quad post-processing** | `python tools/quad_postprocess.py --input out.glb --output out_quad.glb`: Alpha Wrap → QuadriFlow → snap → patch-based UVs → texture transfer. See [`docs/quad_pipeline.md`](docs/quad_pipeline.md). |
+| **MeshAnything V2** | `tools/mesh_refine_meshanything.py`: artist-style low-poly retopology (vendored, patched for transformers ≥ 5). |
+| **Script map** | Every added script/module, by pipeline: [`docs/scripts.md`](docs/scripts.md). |
+
+**Environment variables**: importing `trellis2` sets the ROCm runtime defaults
+(`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, `MIOPEN_DEBUG_CONV_WINOGRAD=0`).
+`TRELLIS2_UNGATED_MODELS=1` (set by `run_sample.py`) swaps the gated DINOv3 and RMBG-2.0 weights for
+ungated substitutes. See [`docs/amd_rocm.md`](docs/amd_rocm.md#7-running-the-pipeline).
+
+**Vendored code** (plain files, no submodules): `CuMesh/`, `FlexGEMM/` and
+`third_party/MeshAnythingV2/`, each with a `VENDORED.md` giving the upstream commit and local
+changes. `third_party/{QuadriFlow,AlphaWrap}` each have a `BUILD_NOTES.md`.
+
+---
+
 # Native and Compact Structured Latents for 3D Generation
 
 <a href="https://arxiv.org/abs/2512.14692"><img src="https://img.shields.io/badge/Paper-Arxiv-b31b1b.svg" alt="Paper"></a>

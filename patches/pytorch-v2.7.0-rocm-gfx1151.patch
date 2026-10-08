@@ -1,0 +1,182 @@
+diff --git a/aten/src/ATen/CMakeLists.txt b/aten/src/ATen/CMakeLists.txt
+index 085af37..11278aa 100644
+--- a/aten/src/ATen/CMakeLists.txt
++++ b/aten/src/ATen/CMakeLists.txt
+@@ -361,12 +361,17 @@ endif()
+     ${native_quantized_hip_hip}
+     ${native_transformers_hip_hip} ${native_transformers_src_hip_hip}
+   )
++  # bgemm_kernels require AMD's clang fork (CK_BUFFER_RESOURCE_3RD_DWORD and
++  # constexpr builtins not available in upstream LLVM). Exclude on non-Windows too.
++  file(GLOB native_hip_bgemm "native/hip/bgemm_kernels/*.hip")
++  file(GLOB native_hip_ck "native/hip/ck*.hip")
+   if(WIN32) # Windows doesn't support Composable Kernels and Triton
+-    file(GLOB native_hip_bgemm "native/hip/bgemm_kernels/*.hip")
+-    file(GLOB native_hip_ck "native/hip/ck*.hip")
+     exclude(ATen_HIP_SRCS "${ATen_HIP_SRCS}"
+       ${native_hip_bgemm} ${native_hip_ck}
+       ${native_transformers_hip_hip} ${native_transformers_hip_cpp})
++  else()
++    # Exclude bgemm/CK kernels: require AMD clang fork, incompatible with upstream LLVM
++    exclude(ATen_HIP_SRCS "${ATen_HIP_SRCS}" ${native_hip_bgemm} ${native_hip_ck})
+   endif()
+   # TODO: Codegen separate files for HIP and use those (s/cuda_generated_sources/hip_generated_sources)
+   list(APPEND all_hip_cpp
+diff --git a/aten/src/ATen/native/hip/ck_bgemm.h b/aten/src/ATen/native/hip/ck_bgemm.h
+index fb14580..8a8f4c0 100644
+--- a/aten/src/ATen/native/hip/ck_bgemm.h
++++ b/aten/src/ATen/native/hip/ck_bgemm.h
+@@ -10,7 +10,12 @@ inline void bgemm_internal_ck(CUDABLAS_BGEMM_ARGTYPES(Dtype)) {
+   static_assert(false&&sizeof(Dtype),"at::cuda::blas_bgemm_internal_ck: not implemented");
+ }
+ 
++// BFloat16 specialization: when ck_bgemm_bfloat16.hip is not compiled (upstream
++// LLVM build without AMD clang fork), provide an inline stub that fails at runtime.
++// In practice this path requires explicitly setting BlasBackend::Ck.
+ template <>
+-void bgemm_internal_ck<at::BFloat16>(CUDABLAS_BGEMM_ARGTYPES(at::BFloat16));
++inline void bgemm_internal_ck<at::BFloat16>(CUDABLAS_BGEMM_ARGTYPES(at::BFloat16)) {
++  TORCH_CHECK(false, "bgemm_internal_ck: Composable Kernels not compiled in this build");
++}
+ 
+ } // namespace at::native
+diff --git a/aten/src/ATen/native/hip/ck_gemm.h b/aten/src/ATen/native/hip/ck_gemm.h
+index 176cbab..ac046fb 100644
+--- a/aten/src/ATen/native/hip/ck_gemm.h
++++ b/aten/src/ATen/native/hip/ck_gemm.h
+@@ -10,14 +10,23 @@ inline void gemm_internal_ck(CUDABLAS_GEMM_ARGTYPES(Dtype)) {
+   static_assert(false&&sizeof(Dtype),"at::cuda::blas_gemm_internal_ck: not implemented");
+ }
+ 
++// Inline stubs for ck*.hip specializations excluded from upstream-LLVM builds.
+ template <>
+-void gemm_internal_ck<double>(CUDABLAS_GEMM_ARGTYPES(double));
++inline void gemm_internal_ck<double>(CUDABLAS_GEMM_ARGTYPES(double)) {
++  TORCH_CHECK(false, "gemm_internal_ck<double>: Composable Kernels not compiled");
++}
+ template <>
+-void gemm_internal_ck<float>(CUDABLAS_GEMM_ARGTYPES(float));
++inline void gemm_internal_ck<float>(CUDABLAS_GEMM_ARGTYPES(float)) {
++  TORCH_CHECK(false, "gemm_internal_ck<float>: Composable Kernels not compiled");
++}
+ template <>
+-void gemm_internal_ck<at::Half>(CUDABLAS_GEMM_ARGTYPES(at::Half));
++inline void gemm_internal_ck<at::Half>(CUDABLAS_GEMM_ARGTYPES(at::Half)) {
++  TORCH_CHECK(false, "gemm_internal_ck<Half>: Composable Kernels not compiled");
++}
+ template <>
+-void gemm_internal_ck<at::BFloat16>(CUDABLAS_GEMM_ARGTYPES(at::BFloat16));
++inline void gemm_internal_ck<at::BFloat16>(CUDABLAS_GEMM_ARGTYPES(at::BFloat16)) {
++  TORCH_CHECK(false, "gemm_internal_ck<BFloat16>: Composable Kernels not compiled");
++}
+ 
+ 
+ 
+diff --git a/c10/macros/Macros.h b/c10/macros/Macros.h
+index 919eb6c..99b572c 100644
+--- a/c10/macros/Macros.h
++++ b/c10/macros/Macros.h
+@@ -312,7 +312,15 @@ constexpr uint32_t CUDA_THREADS_PER_BLOCK_FALLBACK = 256;
+ #endif
+ 
+ #if defined(USE_ROCM)
+-#define C10_WARP_SIZE warpSize // = 64 or 32 (Defined in hip_runtime.h)
++// In device code, __AMDGCN_WAVEFRONT_SIZE__ is the compile-time wavefront size
++// (e.g. 32 for gfx1151). In host code of .hip TUs it is not defined, so fall
++// back to 64 (AMD maximum). warpSize is a runtime-only struct in HIP and cannot
++// be used in constexpr expressions.
++#if defined(__AMDGCN_WAVEFRONT_SIZE__)
++#define C10_WARP_SIZE __AMDGCN_WAVEFRONT_SIZE__
++#else
++#define C10_WARP_SIZE 64
++#endif
+ #else
+ #define C10_WARP_SIZE 32
+ #endif
+diff --git a/cmake/Dependencies.cmake b/cmake/Dependencies.cmake
+index be45936..a0fd969 100644
+--- a/cmake/Dependencies.cmake
++++ b/cmake/Dependencies.cmake
+@@ -1057,12 +1057,14 @@ if(USE_ROCM)
+     list(APPEND HIP_CXX_FLAGS -Wno-duplicate-decl-specifier)
+     list(APPEND HIP_CXX_FLAGS -DCAFFE2_USE_MIOPEN)
+     list(APPEND HIP_CXX_FLAGS -DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_HIP)
+-    list(APPEND HIP_CXX_FLAGS -std=c++17)
++    # -std=c++17 is set by cmake via CMAKE_CXX_STANDARD; omitting it here avoids
++    # breaking C source files that also receive HIP_CXX_FLAGS via torch_compile_options()
+     list(APPEND HIP_CXX_FLAGS -DHIPBLAS_V2)
+     if(HIPBLASLT_VEC_EXT)
+       list(APPEND HIP_CXX_FLAGS -DHIPBLASLT_VEC_EXT)
+     endif()
+-    list(APPEND HIP_HIPCC_FLAGS --offload-compress)
++    # --offload-compress is AMD-specific and not supported by upstream LLVM clang
++    # list(APPEND HIP_HIPCC_FLAGS --offload-compress)
+     if(WIN32)
+       add_definitions(-DROCM_ON_WINDOWS)
+     endif()
+@@ -1076,8 +1078,11 @@ if(USE_ROCM)
+        list(APPEND HIP_HIPCC_FLAGS -fdebug-info-for-profiling)
+     endif(CMAKE_BUILD_TYPE MATCHES Debug)
+ 
+-    # needed for compat with newer versions of hip-clang that introduced C++20 mangling rules
+-    list(APPEND HIP_HIPCC_FLAGS -fclang-abi-compat=17)
++    # -fclang-abi-compat=17 would force C++17 ABI in HIP code but libtorch_cpu.so is
++    # built with clang 21's default C++20 ABI, causing mangling mismatch on constrained
++    # templates (e.g. const_data_ptr<T>). With upstream LLVM (not AMD fork) both sides
++    # already default to C++20 ABI so the flag is not needed and is actively harmful.
++    # list(APPEND HIP_HIPCC_FLAGS -fclang-abi-compat=17)
+ 
+     set(HIP_CLANG_FLAGS ${HIP_CXX_FLAGS})
+     # Ask hcc to generate device code during compilation so we can use
+diff --git a/cmake/public/LoadHIP.cmake b/cmake/public/LoadHIP.cmake
+index 58c74dd..9b48ec7 100644
+--- a/cmake/public/LoadHIP.cmake
++++ b/cmake/public/LoadHIP.cmake
+@@ -60,7 +60,12 @@ message("Building PyTorch for GPU arch: ${PYTORCH_ROCM_ARCH}")
+ # needed because the find_package call to this module uses the Module mode search
+ # https://cmake.org/cmake/help/latest/command/find_package.html#search-modes
+ if(UNIX)
+-  set(CMAKE_MODULE_PATH ${ROCM_PATH}/lib/cmake/hip ${CMAKE_MODULE_PATH})
++  # Ubuntu/Debian multi-arch installs ROCm cmake files under
++  # /usr/lib/x86_64-linux-gnu/cmake/ rather than /usr/lib/cmake/
++  set(CMAKE_MODULE_PATH
++    ${ROCM_PATH}/lib/cmake/hip
++    ${ROCM_PATH}/lib/x86_64-linux-gnu/cmake/hip
++    ${CMAKE_MODULE_PATH})
+ else() # Win32
+   set(CMAKE_MODULE_PATH ${ROCM_PATH}/cmake/ ${CMAKE_MODULE_PATH})
+ endif()
+@@ -83,10 +88,18 @@ if(HIP_FOUND)
+   set(PYTORCH_FOUND_HIP TRUE)
+ 
+   # Find ROCM version for checks
++  # Ubuntu/Debian: rocm-core package may not be installed; fall back to hip_version.h
+   if(UNIX)
+     set(ROCM_VERSION_HEADER_PATH ${ROCM_INCLUDE_DIRS}/rocm-core/rocm_version.h)
++    if(NOT EXISTS ${ROCM_VERSION_HEADER_PATH})
++      set(ROCM_VERSION_HEADER_PATH ${ROCM_INCLUDE_DIRS}/hip/hip_version.h)
++      set(ROCM_LIB_NAME "HIP")
++    else()
++      set(ROCM_LIB_NAME "ROCM")
++    endif()
+   else()
+     set(ROCM_VERSION_HEADER_PATH ${ROCM_INCLUDE_DIRS}/hip/hip_version.h)
++    set(ROCM_LIB_NAME "HIP")
+   endif()
+   get_filename_component(ROCM_HEADER_NAME ${ROCM_VERSION_HEADER_PATH} NAME)
+ 
+@@ -98,14 +111,6 @@ if(HIP_FOUND)
+ 
+   # Read the ROCM headerfile into a variable
+   file(READ ${ROCM_HEADER_FILE} ROCM_HEADER_CONTENT)
+-
+-  # Since Windows currently supports only a part of ROCm and names it HIP-SDK,
+-  # we need to refer to the HIP-SDK equivalents of entities existing in ROCm lib.
+-  if(UNIX)
+-    set(ROCM_LIB_NAME "ROCM")
+-  else() # Win32
+-    set(ROCM_LIB_NAME "HIP")
+-  endif()
+   # Below we use a RegEx to find ROCM version numbers.
+   # Note that CMake does not support \s for blank space. That is
+   # why in the regular expressions below we have a blank space in

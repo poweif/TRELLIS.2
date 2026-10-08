@@ -53,7 +53,7 @@ def parse_obj_raw(path: str) -> Tuple[np.ndarray, List[np.ndarray]]:
 def parse_quad_faces(path: str) -> List[int]:
     """
     Vertex count per face (e.g. 4 for a quad, 3 for a leftover triangle, 5 for a
-    pentagon) -- the ground truth for "quad fraction". history.md records this lesson
+    pentagon) -- the ground truth for "quad fraction". docs/archive/history.md records this lesson
     being learned the hard way once already (valence statistics on a triangulated mesh
     are not a substitute for checking the actual face structure).
     """
@@ -528,7 +528,7 @@ def transfer_texture(vertices: np.ndarray, faces: np.ndarray, uvs: np.ndarray,
     projection (mesh-to-mesh transfer). This is NOT a re-run of postprocess_mesh's live
     voxel-grid sampling: this standalone tool operates on an already-exported GLB and
     has no access to the live PBR-attribute voxel tensor that only exists inside
-    run_sample.py's pipeline (see quadriflow_postprocess_plan.md's Hard Constraints).
+    run_sample.py's pipeline (see docs/archive/quadriflow_postprocess_plan.md's Hard Constraints).
 
     If reference_mesh has no material/UV/baked texture at all, returns bare (untextured)
     geometry rather than fabricating texture data.
@@ -538,9 +538,9 @@ def transfer_texture(vertices: np.ndarray, faces: np.ndarray, uvs: np.ndarray,
     layout, unrelated to vertex coordinates. Deliberately does NOT apply
     postprocess_mesh's vertex/normal axis swap (swap Y/Z, negate Y): that swap corrects
     TRELLIS2's internal (pre-export) mesh convention into GLB's, but this function's
-    `reference_mesh` contract (per quadriflow_postprocess_plan.md) is always an
-    *already-exported* GLB (e.g. tests/*.glb, or run_sample.py's own output) -- already
-    in final GLB convention. Verified empirically: tests/can.glb's own extents already
+    `reference_mesh` contract (per docs/archive/quadriflow_postprocess_plan.md) is always an
+    *already-exported* GLB (e.g. samples/*.glb, or run_sample.py's own output) -- already
+    in final GLB convention. Verified empirically: samples/can.glb's own extents already
     have Y as the tall axis (a standing can), and the output mesh's vertices are already
     in that same frame by construction (Phase 2's snap_to_reference operates directly
     against reference_mesh's coordinates) -- applying the swap again visibly rotated a

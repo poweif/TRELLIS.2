@@ -3,17 +3,27 @@
 # GCC 12 g++. Needed because torch's cpp_extension auto-injects /usr/include, and mixing GCC 12's
 # own bundled libstdc++ headers with the system's /usr/include glibc pthread headers produces a
 # __gthread_cond_t/__GTHREAD_COND_INIT type conflict (see AlphaWrap/BUILD_NOTES.md).
-REAL_GXX=~/miniconda3/envs/cgal-build2/bin/x86_64-conda-linux-gnu-g++
+#
+# CGAL_BUILD_ENV: prefix of the conda env holding conda-forge's GCC 12 (see BUILD_NOTES.md).
+# Defaults to the "cgal-build" env next to the active conda install.
+CONDA_ROOT="$(dirname "$(dirname "${CONDA_EXE:-$HOME/miniconda3/bin/conda}")")"
+CGAL_BUILD_ENV="${CGAL_BUILD_ENV:-$CONDA_ROOT/envs/cgal-build}"
+REAL_GXX="$CGAL_BUILD_ENV/bin/x86_64-conda-linux-gnu-g++"
+if [ ! -x "$REAL_GXX" ]; then
+  echo "gcc12_wrapper: $REAL_GXX not found; set CGAL_BUILD_ENV to the GCC 12 conda env prefix" >&2
+  exit 1
+fi
 args=()
-skip_next=0
+prev=""
 for arg in "$@"; do
-  if [ "$skip_next" = "1" ]; then
-    skip_next=0
+  if [ "$prev" = "-isystem" ]; then
+    prev=""
+    [ "$arg" = "/usr/include" ] || args+=(-isystem "$arg")
     continue
   fi
   case "$arg" in
-    -I/usr/include) continue ;;
-    -isystem) skip_next=1; continue ;;
+    -I/usr/include|-isystem/usr/include) ;;
+    -isystem) prev="-isystem" ;;
     *) args+=("$arg") ;;
   esac
 done

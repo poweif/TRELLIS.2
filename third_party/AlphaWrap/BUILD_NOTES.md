@@ -2,8 +2,8 @@
 
 A minimal standalone CLI (`src/alpha_wrap.cpp`) wrapping CGAL's `Alpha_wrap_3` package --
 built the same way `third_party/QuadriFlow` is: a small self-contained binary, called via
-subprocess, not a Python binding. See `quadriflow_postprocess_plan.md`'s Phase 6 section
-for why this exists: real-world test assets (`tests/*.glb`) turn out to be severely
+subprocess, not a Python binding. See `docs/archive/quadriflow_postprocess_plan.md`'s Phase 6 section
+for why this exists: real-world test assets (`samples/*.glb`, local and untracked) turn out to be severely
 perforated (thousands of pinhole-scale gaps per connected component, most not fillable by
 `trimesh.repair.fill_holes()` or MeshLab's `meshing_close_holes`), which starves
 QuadriFlow of usable surface area (as little as 1-27% coverage). Alpha Wrap sidesteps this
@@ -14,7 +14,7 @@ that strictly contains the input, regardless of how broken the input's topology 
 ## Why not a generic mesh-repair library
 
 Two other tools were tried first and both failed to fix the actual problem (see
-`quadriflow_postprocess_plan.md`'s Phase 6 section for the full account): `fill_holes()`
+`docs/archive/quadriflow_postprocess_plan.md`'s Phase 6 section for the full account): `fill_holes()`
 tools try to *patch* an existing, mostly-valid boundary polygon -- many of these assets'
 "holes" are topologically degenerate (2-vertex boundary loops, too few edges to even form
 a triangle), so patching-based tools have nothing valid to patch. Alpha Wrap never tries
@@ -28,8 +28,13 @@ Same reasoning as QuadriFlow's own BUILD_NOTES.md: pull build dependencies from
 conda-forge into a throwaway env rather than `apt install`.
 
 ```bash
-conda create -n cgal-build -c conda-forge cgal-cpp cmake gxx=12 gcc=12 -y
+conda create -n cgal-build -c conda-forge cgal-cpp=6.2 cmake gxx=12 gcc=12 -y
 ```
+
+The binary and `runtime_libs/` currently in use were built this way: CGAL 6.2 + conda-forge
+GCC 12.4. On the original dev host that env happened to be named `cgal-build2`; an older
+`cgal-build` env there has CGAL 5.6.1 with the same GCC 12.4. Either works for the
+`gcc12_wrapper` (it only needs GCC 12). Everything below assumes a single env named `cgal-build`.
 
 **Use GCC 12, not the system compiler.** This environment's system GCC (15.x) fails to
 compile CGAL 5.6.1's `boost::graph` iterator code (`this->base()` lookup failure in a
@@ -112,10 +117,10 @@ PATH="$(pwd)/gcc12_wrapper:$PATH" CXX=g++ CC=gcc python setup.py build_ext --inp
 **Why the `gcc12_wrapper` prefix is needed**: conda-forge's default `cgal-cpp` is 5.6.1, which
 (same as the CLI binary above) fails to compile on this environment's system GCC (15.x) --
 `boost::graph` iterator CRTP code, `this->base()` lookup failure. The CLI build fixes this with a
-whole separate GCC-12 conda env (`cgal-build`/`cgal-build2`, see above); for the Python extension,
+whole separate GCC-12 conda env (`cgal-build`, see above); for the Python extension,
 `gcc12_wrapper/g++` is a thin shim that calls that same GCC 12 compiler
-(`~/miniconda3/envs/cgal-build2/bin/x86_64-conda-linux-gnu-g++` -- adjust the path in the script if
-that env is ever recreated elsewhere) while stripping `-I/usr/include`/`-isystem /usr/include`
+(`$CGAL_BUILD_ENV/bin/x86_64-conda-linux-gnu-g++`; `CGAL_BUILD_ENV` defaults to the `cgal-build` env
+of the active conda install -- export it to point elsewhere) while stripping `-I/usr/include`/`-isystem /usr/include`
 from the argument list first. Without that stripping, mixing GCC 12's own bundled libstdc++
 headers with the system's `/usr/include` glibc pthread headers produces a
 `__gthread_cond_t`/`__GTHREAD_COND_INIT` type-conflict compile error (torch's `cpp_extension`
@@ -144,7 +149,7 @@ testing). Both should scale with the mesh's own size -- as a starting point, try
 `alpha = bbox_diagonal / 40` and `offset = bbox_diagonal / 1200`, then adjust based on how
 much fine detail (e.g. separated fingers, thin gaps) needs to survive.
 
-**Verified on all 4 of this project's test assets** (see `quadriflow_postprocess_plan.md`
+**Verified on all 4 of this project's test assets** (see `docs/archive/quadriflow_postprocess_plan.md`
 Phase 6): produces a genuinely watertight mesh in 2-5 seconds even on ~450K-face inputs,
 recovering 88.9%-97.6% of the reference's true surface area (versus 1-27% without it) --
 and, critically, preserves fine separated structure correctly (hand's 5 fingers stay

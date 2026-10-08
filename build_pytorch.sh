@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate trellis2
+# Run with the target conda env (e.g. trellis2) already active.
+# Overridable: PYTORCH_SRC (default ~/pytorch-src), ROCM_EXTRA_PREFIX (default /opt/rocm-7.2.3),
+# MAX_JOBS (default: nproc). See docs/amd_rocm.md.
+if [ -z "${CONDA_PREFIX:-}" ]; then
+    echo "[pytorch build] activate the target conda env first (e.g. conda activate trellis2)" >&2
+    exit 1
+fi
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTORCH_SRC="${PYTORCH_SRC:-$HOME/pytorch-src}"
+ROCM_EXTRA_PREFIX="${ROCM_EXTRA_PREFIX:-/opt/rocm-7.2.3}"
 
-cd ~/pytorch-src
+"$REPO_ROOT/scripts/apply_rocm_patches.sh" pytorch "$PYTORCH_SRC"
+cd "$PYTORCH_SRC"
 
 # ROCm 7.1 is installed into /usr (Ubuntu package layout).
 # hipblaslt/rocm-core/roctracer installed from ROCm 7.2.3 repo into /opt/rocm-7.2.3.
@@ -14,7 +23,7 @@ export ROCM_HOME=/usr
 
 # ROCM_INCLUDE_DIRS: LoadHIP.cmake reads this from ENV to find rocm_version.h and
 # hipblaslt headers. Point at the 7.2.3 prefix where those files live.
-export ROCM_INCLUDE_DIRS=/opt/rocm-7.2.3/include
+export ROCM_INCLUDE_DIRS="$ROCM_EXTRA_PREFIX/include"
 
 # Only compile for gfx1151 — cuts build time significantly
 export PYTORCH_ROCM_ARCH="gfx1151"
@@ -30,11 +39,11 @@ export USE_TENSORPIPE=0   # clang 21 incompatible; only needed for RPC/distribut
 export USE_FBGEMM=0       # -Werror=maybe-uninitialized on clang 21
 export USE_KINETO=0       # profiler; not needed
 export USE_DISTRIBUTED=0
-export BUILD_TEST=0        # skip test binaries; only the wheel matters  # disables gloo (clang 21 uint8_t errors); not needed
+export BUILD_TEST=0       # skip test binaries; only the wheel matters
 
 # cmake prefix path: /usr/lib/x86_64-linux-gnu for Ubuntu ROCm 7.1 cmake configs,
 # /opt/rocm-7.2.3 for hipblaslt/rocm-core/roctracer cmake configs
-export CMAKE_PREFIX_PATH="/opt/rocm-7.2.3:/usr/lib/x86_64-linux-gnu:${CONDA_PREFIX}:${CMAKE_PREFIX_PATH:-}"
+export CMAKE_PREFIX_PATH="$ROCM_EXTRA_PREFIX:/usr/lib/x86_64-linux-gnu:${CONDA_PREFIX}:${CMAKE_PREFIX_PATH:-}"
 
 # Ubuntu multi-arch: FindHIP.cmake is at /usr/lib/x86_64-linux-gnu/cmake/hip/
 # LoadHIP.cmake (patched) also adds ${ROCM_PATH}/lib/x86_64-linux-gnu/cmake/hip
@@ -43,7 +52,7 @@ export CMAKE_MODULE_PATH="/usr/lib/x86_64-linux-gnu/cmake/hip"
 # Fix clang 21 / Ubuntu 26.04: uint8_t not declared without explicit #include <cstdint>
 export CMAKE_CXX_FLAGS="-include cstdint -include cstddef"
 
-export MAX_JOBS=24
+export MAX_JOBS="${MAX_JOBS:-$(nproc)}"
 export HIPCC=/usr/bin/hipcc
 
 # /usr/bin/clang++ is actually clang-17 (LLVM 17). The ROCm 7.1 HIP stack
@@ -61,9 +70,9 @@ fi
 # Hipify: converts CUDA source files to HIP. Must run before cmake/pip install.
 # Generates c10/hip/impl/, aten/src/ATen/hip/, etc.
 echo "[pytorch build] running hipify at $(date)"
-python tools/amd_build/build_amd.py 2>&1 | tee ~/pytorch_hipify.log
+python tools/amd_build/build_amd.py 2>&1 | tee "$PYTORCH_SRC/pytorch_hipify.log"
 echo "[pytorch build] hipify done at $(date)"
 
 echo "[pytorch build] started at $(date)"
-pip install --no-build-isolation . 2>&1 | tee ~/pytorch_build.log
-echo "[pytorch build] finished at $(date) — exit $?"
+pip install --no-build-isolation . 2>&1 | tee "$PYTORCH_SRC/pytorch_build.log"
+echo "[pytorch build] finished at $(date)"

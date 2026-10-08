@@ -239,7 +239,7 @@ def refine_mesh_direct_sample(mesh: trimesh.Trimesh, debug_dir=None, n_points=16
     Standalone alternative to refine_mesh_coarse, for side-by-side comparison (not wired
     in as a replacement -- refine_mesh_coarse is untouched). Differs in ways motivated by
     two things found investigating refine_mesh_coarse: decimation flipping triangle
-    winding on tests/watch.glb's closed-loop band despite an existing fix_normals() call,
+    winding on samples/watch.glb's closed-loop band despite an existing fix_normals() call,
     and SDS being an uncertain net-positive whose hyperparameters (tuned against can.glb)
     don't generalize cleanly to other assets (also observed on watch.glb).
 
@@ -263,13 +263,13 @@ def refine_mesh_direct_sample(mesh: trimesh.Trimesh, debug_dir=None, n_points=16
     reference stage (01_decimated in the debug dump), gated off by default to skip both
     the extra compute on large meshes and a whole class of decimation-specific bugs found
     while investigating this (open3d's simplify_vertex_clustering fragmenting
-    tests/watch.glb into 22K+ noise islands, and an unresolved topological defect on
-    tests/can.glb that survived every repair attempt tried -- see history.md's "New pipeline
+    samples/watch.glb into 22K+ noise islands, and an unresolved topological defect on
+    samples/can.glb that survived every repair attempt tried -- see docs/archive/history.md's "New pipeline
     variant: refine_mesh_direct_sample" section).
 
     return_intermediates: if True, returns (new_mesh, {"original_repaired": ...}) instead of
     just new_mesh -- original_repaired is exactly the reference_mesh contract
-    quadriflow_postprocess_plan.md's Phase 2/5 need under Option 1 (full-resolution, repaired,
+    docs/archive/quadriflow_postprocess_plan.md's Phase 2/5 need under Option 1 (full-resolution, repaired,
     pre-MeshAnything mesh), computed here anyway but previously never exposed.
     """
     from . import mesh_debug
@@ -294,9 +294,9 @@ def refine_mesh_direct_sample(mesh: trimesh.Trimesh, debug_dir=None, n_points=16
         # here, gated behind debug_dir, as an optional visual reference/sanity check,
         # since it was the original reason target_faces/this whole code path existed
         # (avoiding it entirely elsewhere saves real compute on large meshes and sidesteps
-        # a whole class of decimation-specific bugs found this session -- see history.md:
-        # open3d's simplify_vertex_clustering fragmenting tests/watch.glb into 22K+ noise
-        # islands, and a genuinely unresolved topological defect on tests/can.glb that
+        # a whole class of decimation-specific bugs found this session -- see docs/archive/history.md:
+        # open3d's simplify_vertex_clustering fragmenting samples/watch.glb into 22K+ noise
+        # islands, and a genuinely unresolved topological defect on samples/can.glb that
         # survived every repair attempt tried).
         if len(mesh.faces) > target_faces:
             print(f"[debug only] Decimating mesh from {len(mesh.faces)} faces down to {target_faces}...")

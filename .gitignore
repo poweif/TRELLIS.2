@@ -221,3 +221,12 @@ third_party/AlphaWrap/runtime_libs/
 
 # Generated sample outputs from tools/quad_postprocess.py (regenerable, not source)
 /quad_postprocess_outputs/
+
+# hipify output: torch's CUDAExtension regenerates these from the .cu/.h sources whenever
+# setup.py runs on ROCm (verified byte-identical), so the .cu files are the only source.
+CuMesh/**/*.hip
+CuMesh/**/*_hip.h
+CuMesh/**/*_hip.cuh
+CuMesh/**/*_hip.cpp
+o-voxel/**/*.hip
+o-voxel/**/*_hip.h

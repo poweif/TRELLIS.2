@@ -48,7 +48,7 @@ target_faces, rho=..., adaptive=...)`), avoiding the temp-file round trip the CL
 requires. It mirrors the pattern already used in this project by
 `CuMesh/third_party/xatlas/binding.cpp` (a CPU-only C++ library wrapped the same way). See
 `trellis2/utils/quad_remesh.py`, which prefers this binding when available and falls back to the
-CLI/subprocess path above otherwise, and `quadriflow_postprocess_plan.md`'s adaptive-density
+CLI/subprocess path above otherwise, and `docs/archive/quadriflow_postprocess_plan.md`'s adaptive-density
 section for why this exists (the CLI has no way to pass a per-vertex sizing field at all -- the
 binding's `rho` argument is the whole point).
 

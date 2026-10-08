@@ -20,7 +20,7 @@ def subdivide_catmull_clark(quad_obj_path: str, output_obj_path: str, levels: in
     quad_remesh.py's remesh_to_quad_dominant_obj.
 
     Only a single filter parameter exists (`iterations`) -- levels default to 1, not the
-    2-3 an earlier (superseded) plan assumed; see quadriflow_postprocess_plan.md Phase 3
+    2-3 an earlier (superseded) plan assumed; see docs/archive/quadriflow_postprocess_plan.md Phase 3
     for why (detail recovery is Phase 2's job now, not subdivision's -- this step is
     purely about silhouette/surface smoothness, evaluate visually before increasing).
     """

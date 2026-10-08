@@ -1,0 +1,40 @@
+diff --git a/setup.py b/setup.py
+index dcb89f8..af7684b 100644
+--- a/setup.py
++++ b/setup.py
+@@ -643,7 +643,7 @@ if ROCM_BACKEND == "triton":
+     # Note: torch is excluded because pip resolves it to CUDA PyTorch from PyPI, overwriting any pre-installed ROCm PyTorch. Users must have torch installed.
+     install_requires = [
+         "einops",
+-        "triton==3.5.1",
++        "triton>=3.5.1",
+     ]
+ else:
+     install_requires = [
+--- a/flash_attn/utils/distributed.py
++++ b/flash_attn/utils/distributed.py
+@@ -2,16 +2,21 @@
+ 
+ import torch
+ from torch import Tensor
+-from torch.distributed import ProcessGroup
++try:
++    from torch.distributed import ProcessGroup
++except ImportError:
++    ProcessGroup = None
+ 
+ # `all_gather_into_tensor` and `reduce_scatter_tensor` are new placeholders for
+ # `_all_gather_base` and `_reduce_scatter_base`. They require the most recent
+ # version of PyTorch. The following 4 lines are for backward compatibility with
+ # older PyTorch.
+ if "all_gather_into_tensor" not in dir(torch.distributed):
+-    torch.distributed.all_gather_into_tensor = torch.distributed._all_gather_base
++    if hasattr(torch.distributed, "_all_gather_base"):
++        torch.distributed.all_gather_into_tensor = torch.distributed._all_gather_base
+ if "reduce_scatter_tensor" not in dir(torch.distributed):
+-    torch.distributed.reduce_scatter_tensor = torch.distributed._reduce_scatter_base
++    if hasattr(torch.distributed, "_reduce_scatter_base"):
++        torch.distributed.reduce_scatter_tensor = torch.distributed._reduce_scatter_base
+ 
+ 
+ # Raw operation, does not support autograd, but does support async

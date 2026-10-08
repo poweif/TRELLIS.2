@@ -22,7 +22,7 @@ def _load_quadriflow_ext():
     # In-process pybind11/torch binding (third_party/QuadriFlow/bindings/quadriflow_binding.cpp),
     # preferred over the CLI/subprocess path below -- avoids a temp-file round trip per call and
     # is the only way to supply adaptive's per-vertex rho (no CLI flag for it, see
-    # quadriflow_postprocess_plan.md's adaptive-density section for why). Cached after the first
+    # docs/archive/quadriflow_postprocess_plan.md's adaptive-density section for why). Cached after the first
     # attempt (successful or not) since the module either exists on sys.path or it doesn't.
     global _quadriflow_ext, _quadriflow_ext_load_attempted
     if _quadriflow_ext_load_attempted:
@@ -53,9 +53,9 @@ def remesh_to_quad_dominant_obj(mesh: trimesh.Trimesh, output_obj_path: str, tar
     via QuadriFlow (third_party/QuadriFlow, see BUILD_NOTES.md there for how it's built),
     writing genuine quad faces to output_obj_path. Verified on this project's
     MeshAnythingV2 outputs: 100% quad faces in the result, correctly-shaped -- see
-    history.md's quad-dominance investigation for why this exists (MeshAnythingV2 itself
+    docs/archive/history.md's quad-dominance investigation for why this exists (MeshAnythingV2 itself
     only ever produces triangle output, confirmed both empirically and against the
-    published literature) and quadriflow_postprocess_plan.md for what happens to this
+    published literature) and docs/archive/quadriflow_postprocess_plan.md for what happens to this
     function's output next.
 
     Writes an .obj file rather than returning a trimesh.Trimesh deliberately:
@@ -77,7 +77,7 @@ def remesh_to_quad_dominant_obj(mesh: trimesh.Trimesh, output_obj_path: str, tar
     not a free-form density field). Requires the in-process binding (quadriflow_ext) -- the
     CLI/subprocess fallback below has no -rho flag, since the whole point of the binding was
     to pass rho directly as a tensor rather than inventing a file-based interface for it (see
-    quadriflow_postprocess_plan.md's adaptive-density section).
+    docs/archive/quadriflow_postprocess_plan.md's adaptive-density section).
 
     QuadriFlow requires a genuinely 2-manifold input (no non-manifold edges/vertices --
     open boundaries are fine, watertightness is not required). repair_mesh() happens to
@@ -140,7 +140,7 @@ def remesh_to_quad_dominant_obj_multi_component(mesh: trimesh.Trimesh, output_ob
     edge-length target for the whole mesh -- `scale = sqrt(surface_area / faces)`
     (third_party/QuadriFlow/src/parametrizer-mesh.cpp:60), using the TOTAL surface area
     across every part, applied uniformly. Confirmed empirically (see
-    quadriflow_postprocess_plan.md's Phase 6 section) that this silently under-represents
+    docs/archive/quadriflow_postprocess_plan.md's Phase 6 section) that this silently under-represents
     or entirely drops any connected component much smaller than that global scale: all 4
     of this project's test assets are themselves heavily multi-part (9,600-15,000
     connected components each, even the largest single component only 4-21% of total
@@ -243,7 +243,7 @@ def remesh_to_quad_dominant_obj_multi_component(mesh: trimesh.Trimesh, output_ob
                                         process=False).area
             # NB: `out_area > sub.area * 3` alone would silently pass a NaN out_area
             # straight through (any comparison against NaN is False in Python/numpy --
-            # the exact same pitfall this project already hit once, see history.md's SDS
+            # the exact same pitfall this project already hit once, see docs/archive/history.md's SDS
             # explosion-guard saga) -- confirmed this actually happens: component 54's
             # output area came back NaN (degenerate/self-intersecting quads), which is
             # why the area-based check above still let this component's corrupted

@@ -21,7 +21,7 @@ from trellis2.utils.subdivision import subdivide_catmull_clark
 def main():
     parser = argparse.ArgumentParser(
         description="Post-process a mesh into a quad-derived, UV-unwrapped, textured GLB "
-                    "(quadriflow_postprocess_plan.md Phases 1-5). Standalone: takes an input GLB, "
+                    "(see docs/quad_pipeline.md). Standalone: takes an input GLB, "
                     "produces a final textured GLB, no manual Python required.")
     parser.add_argument("--input", required=True,
                         help="Input GLB mesh -- also used as the texture/geometry reference (Phase 2/5's reference_mesh)")
@@ -29,7 +29,7 @@ def main():
     parser.add_argument("--source", choices=["direct", "meshanything"], default="direct",
                         help="'direct' (default): QuadriFlow runs directly on the repaired original mesh -- "
                              "recommended default per Phase 1's ablation (8/8 successes, recognizable/complete "
-                             "results on every test asset, see quadriflow_postprocess_plan.md). "
+                             "results on every test asset, see docs/quad_pipeline.md). "
                              "'meshanything': QuadriFlow runs on MeshAnythingV2's coarse retopology first -- "
                              "narrower use case (artist-style edge flow), known to fail outright or fragment badly "
                              "on some assets (Phase 1 findings), not trusted as a default.")
@@ -50,7 +50,7 @@ def main():
                              "on this project's 4 test assets. Alpha Wrap reconstructs a genuinely watertight "
                              "surface first regardless of input topology, recovering 88.9%%-97.6%% instead (2-5s "
                              "even on ~450K-face inputs) -- see third_party/AlphaWrap/BUILD_NOTES.md and "
-                             "quadriflow_postprocess_plan.md's Phase 6 section. Only skip this for input already "
+                             "docs/quad_pipeline.md. Only skip this for input already "
                              "known to be clean/watertight, or if the AlphaWrap binary isn't built.")
     parser.add_argument("--alpha-wrap-alpha", type=float, default=None,
                         help="Alpha Wrap detail parameter (smaller = finer). None (default) = bbox_diagonal/40.")

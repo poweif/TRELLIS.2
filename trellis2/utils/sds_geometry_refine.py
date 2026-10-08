@@ -136,7 +136,7 @@ def refine_geometry(mesh: trimesh.Trimesh, reference_image, n_iters=100, device=
         mask = out['mask']
 
         # Diffuse "clay" shading (textureless, geometry-only SDS per this phase's original
-        # scope -- see history.md's "MeshAnything V2 integration" section). A raw normal-as-RGB
+        # scope -- see docs/archive/history.md's "MeshAnything V2 integration" section). A raw normal-as-RGB
         # map is wildly
         # out-of-distribution for a natural-image diffusion prior (it's never seen a
         # rainbow tangent-space visualization), which produced incoherent, high-frequency

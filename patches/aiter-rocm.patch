@@ -1,0 +1,33 @@
+diff --git a/aiter/jit/utils/cpp_extension.py b/aiter/jit/utils/cpp_extension.py
+index 2bd4c14a6..421ba1139 100644
+--- a/aiter/jit/utils/cpp_extension.py
++++ b/aiter/jit/utils/cpp_extension.py
+@@ -89,7 +89,12 @@ def get_hip_version():
+     try:
+         hipconfig = executable_path("hipconfig")
+         output = subprocess.check_output([hipconfig, "--version"], text=True)
+-        return output
++        # Ubuntu's hipconfig --version prepends "HIP version: " and may append
++        # compiler info on subsequent lines. Extract just the version number.
++        first_line = output.strip().splitlines()[0]
++        if first_line.lower().startswith("hip version:"):
++            first_line = first_line.split(":", 1)[1].strip()
++        return first_line
+     except Exception:
+         raise RuntimeError("ROCm version file not found")
+ 
+--- a/aiter/dist/parallel_state.py
++++ b/aiter/dist/parallel_state.py
+@@ -33,7 +33,11 @@
+ 
+ import torch
+ import torch.distributed
+-from torch.distributed import Backend, ProcessGroup
++try:
++    from torch.distributed import Backend, ProcessGroup
++except ImportError:
++    Backend = None
++    ProcessGroup = None
+ 
+ import os
+ from aiter import logger

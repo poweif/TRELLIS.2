@@ -8,7 +8,7 @@ def compute_rho(vertices: np.ndarray, faces: np.ndarray, eps: float = 1e-8) -> n
     """
     Per-vertex curvature-adaptive "rho" (target local edge length / curvature radius) for
     QuadriFlow's adaptive quad density (see quadriflow_ext.remesh's `rho` argument, and
-    quadriflow_postprocess_plan.md's adaptive-density section for why this exists and how it
+    docs/archive/quadriflow_postprocess_plan.md's adaptive-density section for why this exists and how it
     connects to QuadriFlow's `optimize_scale`).
 
     Recovers principal curvature *magnitudes* via mean curvature H (cotangent-Laplacian of

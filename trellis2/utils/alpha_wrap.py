@@ -45,7 +45,7 @@ def alpha_wrap_mesh(mesh: trimesh.Trimesh, alpha: float = None, offset: float = 
     """
     Reconstruct a genuinely watertight, 2-manifold, self-intersection-free surface that
     strictly contains `mesh`, via CGAL's Alpha_wrap_3 (third_party/AlphaWrap, see
-    BUILD_NOTES.md there for how it's built and quadriflow_postprocess_plan.md's Phase 6
+    BUILD_NOTES.md there for how it's built and docs/archive/quadriflow_postprocess_plan.md's Phase 6
     section for why this exists).
 
     Unlike hole-filling/patching approaches (trimesh.repair.fill_holes, MeshLab's
