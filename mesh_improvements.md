@@ -12,8 +12,10 @@ resolution. The raw mesh goes through:
 
 1. **Simplification** — QEM-based iterative edge collapse (`CuMesh/src/simplify.cu`)
 2. **Cleanup** — deduplication, hole filling (`CuMesh/src/clean_up.cu`)
-3. **UV unwrapping** — xatlas angle-based flattening
-4. **Texture baking** — multi-view projection (`trellis2/utils/uv_rasterize.py`)
+3. **UV unwrapping** — `cumesh.uv_unwrap` (xatlas-based angle-based flattening internally)
+4. **Texture baking** — direct grid-sampling of a live sparse PBR-attribute voxel tensor at each
+   UV texel's rasterized 3D position (see the correction in §2.1 below — not multi-view
+   projection, corrected from this doc's original description)
 5. **Export** — GLB via trimesh
 
 The output is an all-triangle mesh. The simplification is isotropic (QEM treats all
@@ -126,6 +128,19 @@ Classical methods require careful parameter tuning and produce variable quality 
 shapes. Recent work trains neural networks to generate meshes that mimic artist-created
 topology.
 
+> **Correction (see `history.md`):** this section originally described MeshAnything/MeshAnything
+> V2 output as "quad-dominant." That was never actually verified until this fork tried it, and
+> turned out to be false — MeshAnythingV2 is fundamentally triangle-tokenized
+> (`face_per_token = 9`, always 3 vertices) and never produces a quad-dominant mesh, confirmed both
+> empirically (vertex valence distribution, even on a pristine synthetic cylinder) and against the
+> published literature (QuadLink/QuadGPT both list it among triangle-only autoregressive
+> generators). "Artist-Created Mesh" names the *training-data category* (meshes made by human
+> artists), not a topology guarantee. Left the entries below otherwise as originally written for
+> historical/technical accuracy about what these papers actually claim; see `history.md` for the
+> full investigation and `quadriflow_postprocess_plan.md` for what this fork does instead
+> (QuadriFlow, applied after MeshAnything or directly on the original mesh, actually produces
+> genuine quads).
+
 #### MeshAnything — Chen et al., 2024
 - **Paper**: "MeshAnything: Artist-Created Mesh Generation with Autoregressive Transformers"
 - **Code**: github.com/buaacyw/MeshAnything
@@ -133,8 +148,8 @@ topology.
   meshes. Mesh faces are tokenized using a VQ-VAE (vertex positions quantized to a discrete
   codebook, face sequences ordered by position). Given a point cloud or 3D shape as
   conditioning, the model generates a sequence of face tokens that decode to a clean mesh.
-- **Output**: Meshes with ~800 faces, quad-dominant, with edge loops that follow the
-  shape's semantic structure — similar to what a skilled 3D artist would produce.
+- **Output**: Meshes with ~800 faces, triangle-only (see correction above), with edge loops
+  that follow the shape's semantic structure — similar to what a skilled 3D artist would produce.
 - **Strengths**: Produces topology-aware meshes automatically; no parameter tuning.
 - **Weaknesses**: Face count cap (~800) is low for high-detail objects; not suitable as a
   final high-poly mesh without subdivision. Inference can be slow. Pretrained on specific
@@ -147,12 +162,14 @@ topology.
   **adjacency-based traversal** — each new face is described relative to its neighbor
   rather than in absolute coordinates. This improves local consistency, reduces sequence
   length for the same face count, and allows higher-detail outputs.
-- Supports up to ~1600 faces; still constrained but better than V1.
+- Supports up to ~1600 faces; still constrained but better than V1. Triangle-only output
+  (see correction above).
 - **Caveats from the reference implementation**: expects input meshes/point clouds in
   +Y-up convention (TRELLIS output would need reorienting first). The authors also note
   that plain feed-forward generation is often suboptimal — they recommend a
   reconstruction-guided or SDS-guided variant for reliable artist-quality output rather
-  than naive point-cloud-in/mesh-out inference.
+  than naive point-cloud-in/mesh-out inference. This fork tried the SDS-guided variant —
+  see `history.md` for how that went.
 
 #### MeshXL — 2024
 - Similar autoregressive paradigm, focuses on scalability to higher polygon counts and
@@ -169,7 +186,10 @@ workflow is common in VFX pipelines.
 For the TRELLIS pipeline, the most natural integration point is right after the SLat decode
 step — sample a dense point cloud from the high-res dual-contour mesh (or directly from the
 latent), run MeshAnything V2 to get a clean coarse mesh, then use the original dense mesh to
-bake displacement and texture maps onto the coarse mesh's UV layout.
+bake displacement and texture maps onto the coarse mesh's UV layout. (This fork built exactly
+this integration — see `history.md` for the full build-out, and `quadriflow_postprocess_plan.md`
+for the currently-active plan, since a QuadriFlow quad-conversion step now sits between
+MeshAnything's output and the final mesh.)
 
 ---
 
@@ -177,15 +197,19 @@ bake displacement and texture maps onto the coarse mesh's UV layout.
 
 ### 2.1 Current approach and its limitations
 
-`trellis2_texturing.py` bakes texture by:
-1. Rendering the mesh from multiple viewpoints using the diffusion model's texture latent
-2. Projecting visible pixels back onto the UV atlas using `uv_rasterize.py`
-3. Averaging contributions where multiple views overlap
-
-This produces correct texture in well-lit, visible regions but has three main failure modes:
-- **Occluded regions**: areas never visible from any render viewpoint get no texture data
-- **Seam artifacts**: view projections don't respect UV seam boundaries
-- **Blurriness**: averaging multiple projections at different scales smears high-frequency detail
+> **Correction (see `history.md`):** the description below (multi-view rendering + UV projection)
+> was the originally-assumed approach at survey time. The texturing pipeline actually implemented
+> in `trellis2_texturing.py`'s `postprocess_mesh` / `o_voxel/postprocess.py`'s `to_glb` works
+> differently: it unwraps UVs (`cumesh.uv_unwrap` if the mesh has none), rasterizes those UVs to get
+> each texel's 3D position (`uv_rasterize.py`'s `rasterize_uv`/`interpolate_uv`), and directly
+> **grid-samples a live sparse PBR-attribute voxel tensor** at that position
+> (`flex_gemm.ops.grid_sample.grid_sample_3d`) — no multi-view rendering or per-view projection at
+> all. This sidesteps the seam/blur failure modes below entirely (there's only ever one "view": the
+> voxel grid itself), at the cost of only being usable while that live voxel tensor is still in
+> scope (i.e. inside `run_sample.py`'s own pipeline run, before it bakes to a flat 2D atlas and
+> discards it — a standalone downstream tool operating on an already-exported GLB has no access to
+> it, and needs a different, mesh-to-mesh texture-transfer approach instead; see
+> `quadriflow_postprocess_plan.md`).
 
 ### 2.2 UV parameterization
 
@@ -296,79 +320,26 @@ objective and produces higher quality results.
 
 ---
 
-## Part 3: Integration Roadmap for TRELLIS.2
+## Part 3: Integration Roadmap — superseded, see current docs
 
-### Option A: Classical remeshing (low complexity, good quality)
+This section originally sketched four options (A: classical QuadriFlow remeshing, B: MeshAnything
+V2 learning-based generation, C: diffusion-inpainting texture refinement, D: PBR material
+decomposition via NVDiffRec-style optimization) with effort estimates for each, written before any
+of them had actually been tried.
 
-```
-dual_contour_mesh
-  → QEM simplification (current, keep)
-  → sharp feature detection (dihedral angle threshold)
-  → QuadriFlow with crease constraints
-  → xatlas or OptCuts UV unwrap
-  → view projection texture bake (current)
-  → GLB export
-```
+**What actually happened**: Option B was attempted first (see `history.md` for the full build-out),
+and its core premise — that MeshAnything V2 produces quad-dominant output — turned out to be false.
+Option A's actual mechanism (QuadriFlow) was then adopted as the fix, layered *after* MeshAnything's
+geometry-improvement step rather than replacing it outright (a hybrid of A and B, not a clean either/or
+the way this section originally framed it) — though running QuadriFlow directly on the original mesh
+instead, without MeshAnything in the loop at all, remains an open, actively-considered alternative.
+Options C and D were never attempted; they remain viable independent ideas if picked up later, and
+the survey sections above (2.3-2.5) are still accurate background for them.
 
-**Effort**: Medium. QuadriFlow has a usable C++ library. Main work is wiring the crease
-detection output into QuadriFlow's constraint input and rebuilding CuMesh's downstream
-pipeline for non-triangle connectivity.
-
-### Option B: Learning-based mesh generation (high quality, higher complexity)
-
-```
-SLat decode
-  → sample point cloud (N=16384 points from dual contour surface)
-  → MeshAnything V2 → coarse quad-dominant mesh (~1600 faces)
-  → Catmull-Clark subdivision (2–3 levels → ~25K–100K faces)
-  → project/bake detail from original high-res dual contour mesh
-  → xatlas UV unwrap on subdivided mesh
-  → view projection texture bake
-  → GLB export
-```
-
-**Effort**: Higher. Requires integrating MeshAnything V2 (transformer inference), implementing
-the detail baking step (closest-point projection of normals/displacement), and handling the
-subdivision step. MeshAnything uses standard PyTorch so should work on ROCm. Note: the
-reference implementation warns that naive feed-forward inference is often suboptimal quality
-— getting reliable artist-grade topology likely requires the reconstruction- or SDS-guided
-variant, which adds an optimization loop on top of the base transformer inference and isn't
-reflected in the estimate above. Also need to reorient TRELLIS output to +Y-up before feeding
-MeshAnything V2 (it expects that convention).
-
-### Option C: Texture refinement with diffusion inpainting (independent of mesh topology)
-
-This can be layered on top of the current pipeline without changing the mesh at all:
-
-```
-current pipeline output (textured GLB)
-  → identify UV atlas regions with low coverage (< N contributing views)
-  → render mesh from viewpoints targeting low-coverage areas
-  → inpaint low-coverage UV regions using depth-conditioned diffusion (TEXTure-style)
-  → re-export GLB
-```
-
-**Effort**: Lower than A or B. The main component needed is a depth-to-image diffusion
-model (e.g., ControlNet with depth conditioning) and a UV coverage map (easy to compute
-from the rasterization pass). This is the most self-contained improvement.
-
-### Option D: PBR material decomposition (better rendering, independent of topology)
-
-Replace the current single-texture bake with a PBR material bake:
-
-```
-current texture bake
-  → NVDiffRec-style optimization loop:
-      - learnable albedo, roughness, metallic atlases
-      - environment light (SH or latlong)
-      - differentiable rasterization (uv_rasterize.py)
-      - photometric loss against reference renders
-  → export GLB with full PBR material
-```
-
-**Effort**: Medium. The differentiable part is pure PyTorch (no nvdiffrast needed if we use
-`uv_rasterize.py`). Main complexity is setting up the optimization loop and the SH lighting
-model.
+**For the current state and active plan, see `history.md` (what was tried and why) and
+`quadriflow_postprocess_plan.md` (the live, forward-looking plan for what happens after QuadriFlow's
+quad conversion — UV unwrap, texture transfer, optional subdivision, and the still-open
+MeshAnything-in-the-loop-or-not decision).**
 
 ---
 
