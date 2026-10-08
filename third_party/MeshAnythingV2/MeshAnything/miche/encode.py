@@ -40,7 +40,9 @@ def reconstruction(args, model, bounds=(-1.25, -1.25, -1.25, 1.25, 1.25, 1.25), 
     return 0
 
 def load_model(ckpt_path="MeshAnything/miche/shapevae-256.ckpt"):
-    model_config = OmegaConf.load("MeshAnything/miche/shapevae-256.yaml")
+    import os
+    yaml_path = os.path.join(os.path.dirname(__file__), "shapevae-256.yaml")
+    model_config = OmegaConf.load(yaml_path)
     # print(model_config)
     if hasattr(model_config, "model"):
         model_config = model_config.model

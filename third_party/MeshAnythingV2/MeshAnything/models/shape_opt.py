@@ -284,8 +284,8 @@ class ShapeOPTDecoder(OPTDecoder):
         # `output_attentions` are unused by MeshAnythingV2's actual inference path
         # (always None/False here), so this rewrite drops the machinery for those
         # rather than trying to replicate the old tuple contract. Adapted from the
-        # installed transformers' own `OPTDecoder.forward` (see
-        # meshanything_v2_plan.md for the upstream template this was copied from).
+        # installed transformers' own `OPTDecoder.forward` (see ../../../../history.md's
+        # "Custom changes on top of upstream TRELLIS.2" section for the patch history).
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
