@@ -11,7 +11,7 @@ def test_phase3():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Create a dense mesh
-    mesh = trimesh.load("tests/can.glb", force="mesh")
+    mesh = trimesh.load("samples/can.glb", force="mesh")
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
     # Simplify down to 16000 to match the actual pipeline's new behavior
@@ -22,7 +22,7 @@ def test_phase3():
     print(f"Original mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
     
     # Load real reference image
-    ref_image = Image.open("tests/can.png").convert("RGB")
+    ref_image = Image.open("samples/can.png").convert("RGB")
     
     try:
         # Run 100 iterations of SDS

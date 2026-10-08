@@ -45,13 +45,13 @@ def test_phase5_control():
 
 def test_phase5_real():
     print("Testing Phase 5 (Real Case: With SDS)...")
-    mesh = trimesh.load("tests/can.glb", force="mesh")
+    mesh = trimesh.load("samples/can.glb", force="mesh")
     # Take a small sub-part if it's a scene
     if isinstance(mesh, trimesh.Scene):
         mesh = mesh.dump(concatenate=True)
     orig_bounds = mesh.bounds
     
-    out_mesh = refine_mesh_coarse(mesh, "tests/can.png") # tests/can.png isn't strictly needed for code, but let's just pass empty string if it fails
+    out_mesh = refine_mesh_coarse(mesh, "samples/can.png") # samples/can.png isn't strictly needed for code, but let's just pass empty string if it fails
     
     assert not np.isnan(out_mesh.vertices).any()
     assert not np.isnan(out_mesh.faces).any()
