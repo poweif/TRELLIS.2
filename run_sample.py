@@ -1,6 +1,6 @@
 import os
 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
-os.environ["ATTN_BACKEND"] = "flash_attn"
+os.environ.setdefault("ATTN_BACKEND", "flash_attn")
 # Required for the ROCm Triton-based flash-attn backend (no HIP binary for gfx1151).
 os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
 # MIOpen on gfx1151 fails to load the Winograd kernel assembly when benchmarking
