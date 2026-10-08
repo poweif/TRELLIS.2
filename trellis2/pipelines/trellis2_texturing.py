@@ -9,6 +9,7 @@ from . import samplers, rembg
 from ..modules.sparse import SparseTensor
 from ..modules import image_feature_extractor
 import o_voxel
+import cumesh
 try:
     import nvdiffrast.torch as dr
 except ImportError:

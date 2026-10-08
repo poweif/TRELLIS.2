@@ -7,6 +7,8 @@ os.environ.setdefault("FLASH_ATTENTION_TRITON_AMD_ENABLE", "TRUE")
 # new convolution shapes, raising miopenStatusUnknownError. Disable Winograd so
 # MIOpen only considers GEMM/Direct algorithms that work on this GPU.
 os.environ.setdefault("MIOPEN_DEBUG_CONV_WINOGRAD", "0")
+# The official DINOv3 and RMBG-2.0 weights are gated on Hugging Face; use ungated substitutes.
+os.environ.setdefault("TRELLIS2_UNGATED_MODELS", "1")
 
 import argparse
 import cv2

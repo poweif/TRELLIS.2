@@ -1,4 +1,5 @@
 from typing import *
+import os
 from transformers import AutoModelForImageSegmentation
 import torch
 from torchvision import transforms
@@ -7,7 +8,10 @@ from PIL import Image
 
 class BiRefNet:
     def __init__(self, model_name: str = "ZhengPeng7/BiRefNet"):
-        if model_name == "briaai/RMBG-2.0":
+        # RMBG-2.0 is gated on Hugging Face. Opt in to the ungated BiRefNet weights from the
+        # model's author (MIT; not identical to RMBG-2.0) with TRELLIS2_UNGATED_MODELS=1.
+        if model_name == "briaai/RMBG-2.0" and os.environ.get("TRELLIS2_UNGATED_MODELS") == "1":
+            print(f"[TRELLIS2_UNGATED_MODELS] Loading ZhengPeng7/BiRefNet instead of {model_name}")
             model_name = "ZhengPeng7/BiRefNet"
         self.model = AutoModelForImageSegmentation.from_pretrained(
             model_name, trust_remote_code=True
