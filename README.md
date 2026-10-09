@@ -5,26 +5,26 @@
 > [!NOTE]
 > **This is a fork for AMD ROCm (Strix Halo, Radeon 8060S, gfx1151).** CUDA is not a supported
 > target here. Upstream CUDA code paths are kept unchanged to ease rebasing, but are untested.
-> The original project's README follows the "Fork additions" section.
+> The original project's README follows the "Fork changes" section.
 
-## Fork additions
+## Fork changes
 
 | | |
 |---|---|
 | **ROCm build** | Custom PyTorch 2.7.0 + ROCm 7.1, flash-attn (Triton backend), and gfx1151 builds of CuMesh / o-voxel / FlexGEMM. Full guide: [`docs/amd_rocm.md`](docs/amd_rocm.md); source patches in [`patches/`](patches/) via `scripts/apply_rocm_patches.sh`. |
-| **Generation** | `python run_sample.py --image photo.png --output out.glb` runs background removal, image-to-3D and texture baking (~4 min on the 8060S). nvdiffrast is replaced by a pure-PyTorch UV rasterizer. |
-| **Quad post-processing** | `python tools/quad_postprocess.py --input out.glb --output out_quad.glb`: Alpha Wrap → QuadriFlow → snap → patch-based UVs → texture transfer. See [`docs/quad_pipeline.md`](docs/quad_pipeline.md). |
-| **MeshAnything V2** | `tools/mesh_refine_meshanything.py`: artist-style low-poly retopology (vendored, patched for transformers ≥ 5). |
-| **Script map** | Every added script/module, by pipeline: [`docs/scripts.md`](docs/scripts.md). |
+| **Port** | A small set of upstream files changed for ROCm, each guarded on `torch.version.hip` (listed in [`docs/amd_rocm.md`](docs/amd_rocm.md)). nvdiffrast is replaced by a pure-PyTorch UV rasterizer (`o-voxel/o_voxel/uv_rasterize.py`) for GLB baking. |
+| **Packaging** | `pyproject.toml` makes `trellis2` pip-installable (`pip install --no-build-isolation -e .`), for projects that build on this fork. |
 
 **Environment variables**: importing `trellis2` sets the ROCm runtime defaults
 (`FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`, `MIOPEN_DEBUG_CONV_WINOGRAD=0`).
-`TRELLIS2_UNGATED_MODELS=1` (set by `run_sample.py`) swaps the gated DINOv3 and RMBG-2.0 weights for
-ungated substitutes. See [`docs/amd_rocm.md`](docs/amd_rocm.md#7-running-the-pipeline).
 
-**Vendored code** (plain files, no submodules): `CuMesh/`, `FlexGEMM/` and
-`third_party/MeshAnythingV2/`, each with a `VENDORED.md` giving the upstream commit and local
-changes. `third_party/{QuadriFlow,AlphaWrap}` each have a `BUILD_NOTES.md`.
+**Vendored code** (plain files, no submodules): `CuMesh/` and `FlexGEMM/`, each with a
+`VENDORED.md` giving the upstream commit and local changes.
+
+**Mesh tools moved out.** Background removal, a no-gated-models generation command, and the quad
+post-processing (Alpha Wrap + QuadriFlow) now live in
+[img2mesh-go](https://github.com/poweif/img2mesh-go), which installs this fork as a dependency.
+The fork as it was before the split is tagged `img2mesh-baseline`.
 
 ---
 
