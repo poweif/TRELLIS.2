@@ -1,5 +1,4 @@
 from typing import *
-import os
 import torch
 import torch.nn.functional as F
 from torchvision import transforms
@@ -62,11 +61,6 @@ class DinoV3FeatureExtractor:
     Feature extractor for DINOv3 models.
     """
     def __init__(self, model_name: str, image_size=512):
-        # The official DINOv3 weights are gated on Hugging Face. Opt in to an ungated
-        # third-party re-upload (provenance unverified) with TRELLIS2_UNGATED_MODELS=1.
-        if model_name == "facebook/dinov3-vitl16-pretrain-lvd1689m" and os.environ.get("TRELLIS2_UNGATED_MODELS") == "1":
-            print(f"[TRELLIS2_UNGATED_MODELS] Loading kryveil/dinov3-vitl16-pretrain-lvd1689m instead of {model_name}")
-            model_name = "kryveil/dinov3-vitl16-pretrain-lvd1689m"
         self.model_name = model_name
         self.model = DINOv3ViTModel.from_pretrained(model_name)
         self.model.eval()

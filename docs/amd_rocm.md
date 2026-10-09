@@ -304,34 +304,34 @@ pip install --no-build-isolation -e .
 
 ## 7. Running the pipeline
 
-```bash
-conda activate trellis2
-cd /path/to/TRELLIS.2
+```python
+import o_voxel
+from PIL import Image
+from trellis2.pipelines import Trellis2ImageTo3DPipeline
+
+pipeline = Trellis2ImageTo3DPipeline.from_pretrained("microsoft/TRELLIS.2-4B")
+pipeline.cuda()
+mesh = pipeline.run(Image.open("assets/example_image/T.png"))[0]
+glb = o_voxel.postprocess.to_glb(
+    vertices=mesh.vertices, faces=mesh.faces, attr_volume=mesh.attrs, coords=mesh.coords,
+    attr_layout=mesh.layout, voxel_size=mesh.voxel_size, aabb=[[-0.5] * 3, [0.5] * 3],
+    decimation_target=500000, texture_size=1024, remesh=False)
+glb.export("out.glb")
 ```
 
-**Arbitrary input photo** (background removal runs automatically via BiRefNet):
-```bash
-python run_sample.py --image photo.png --output out.glb
-```
+No environment variable overrides are needed: importing `trellis2` sets
+`MIOPEN_DEBUG_CONV_WINOGRAD=0` and `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` on ROCm.
 
-**Pre-processed image that already has a transparent background:**
-```bash
-python run_sample.py --image assets/example_image/T.png --output out.glb --no-remove-bg
-```
+- **Gated models.** The pipeline config names `facebook/dinov3-vitl16-pretrain-lvd1689m` and
+  `briaai/RMBG-2.0`, both gated on Hugging Face: accept their licenses and `hf auth login` first.
+  [img2mesh-go](https://github.com/poweif/img2mesh-go)'s `img2mesh generate` can swap in ungated
+  substitutes instead (by rewriting a local `pipeline.json`, no change to this repo), and adds
+  background removal and subject centering.
+- **`example.py` stops at its preview video:** `render_utils` uses `MeshRenderer` /
+  `PbrMeshRenderer`, which need nvdiffrast and raise `RuntimeError` on ROCm. GLB export works
+  (`to_glb` falls back to `o_voxel.uv_rasterize`).
 
-No environment variable overrides are needed. Importing `trellis2` sets
-`MIOPEN_DEBUG_CONV_WINOGRAD=0` and `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` on ROCm, and
-`run_sample.py` sets `TRELLIS2_UNGATED_MODELS=1`.
-
-**Gated models.** The pipeline config names `facebook/dinov3-vitl16-pretrain-lvd1689m` and
-`briaai/RMBG-2.0`, both gated on Hugging Face. With `TRELLIS2_UNGATED_MODELS=1` they are swapped
-for `kryveil/dinov3-vitl16-pretrain-lvd1689m` (an ungated third-party re-upload, provenance
-unverified) and `ZhengPeng7/BiRefNet` (the author's MIT release, not identical to RMBG-2.0), with
-a notice printed. To use the originals instead, accept their licenses on Hugging Face, run
-`hf auth login`, and run with `TRELLIS2_UNGATED_MODELS=0`. Other entry points (`example.py`,
-`app.py`, …) default to the originals.
-
-Measured runtime on Radeon 8060S (`samples/can.png`, defaults, 2026-10-07; about 4 minutes
+Measured runtime on Radeon 8060S (a 1024² photo of a can, default settings, 2026-10-07; about 4 minutes
 wall-clock including model loading):
 
 | Stage | Time |
@@ -345,8 +345,8 @@ wall-clock including model loading):
 (An earlier build of this stack measured ~41 minutes for the same pipeline.)
 
 Final GLBs differ slightly from run to run even with a fixed seed: CuMesh's GPU `simplify`
-is nondeterministic. Compare the raw mesh (`Generated raw mesh with …` in the log), which is
-deterministic.
+is nondeterministic. Compare the raw mesh from `pipeline.run` instead (`mesh.vertices`,
+`mesh.faces`), which is deterministic.
 
 ---
 
